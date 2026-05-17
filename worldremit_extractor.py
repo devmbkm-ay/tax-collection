@@ -52,7 +52,8 @@ class WorldRemitExtractor:
         """Connect to email server using IMAP."""
         try:
             # Outlook/Hotmail IMAP settings
-            imap_host = 'outlook.office365.com'
+            # imap_host = 'outlook.office365.com'
+            imap_host = 'imap.gmail.com'  # For testing with Gmail, change to 'outlook.office365.com' for actual use
             imap_port = 993
             
             print(f"Connecting to {imap_host}...")
@@ -72,7 +73,7 @@ class WorldRemitExtractor:
             print(f"Connection error: {e}")
             return False
     
-    def search_worldremit_emails(self, recipient_name: str, start_year: int = 2021) -> List[bytes]:
+    def search_worldremit_emails(self, recipient_name: str, start_year: int = "") -> List[bytes]:
         """Search for WorldRemit emails containing the recipient name."""
         try:
             self.imap_server.select('INBOX')
