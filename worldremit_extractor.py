@@ -27,6 +27,60 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
 KNOWN_CURRENCIES = {'UGX', 'USD', 'EUR', 'GBP', 'CAD', 'AUD', 'CHF', 'SEK', 'NOK', 'DKK'}
 
+TRANSLATIONS = {
+    'fr': {
+        'title':          'Rapport de Transactions WorldRemit',
+        'report_date':    'Rapport généré le',
+        'total_txn':      'Nombre de transactions',
+        'recipient':      'Bénéficiaire',
+        'period':         'Période',
+        'total_eur':      'Total équivalent EUR',
+        'rates_note':     'Taux de change utilisés (approximatifs)',
+        'no_txn':         'Aucune transaction trouvée.',
+        'col_date':       'Date',
+        'col_amount':     'Montant',
+        'col_currency':   'Devise',
+        'col_eur':        '≈ EUR',
+        'col_txn':        'N° Transaction',
+        'col_subject':    'Objet',
+        'summary_title':  'Récapitulatif par devise',
+        'total_eur_lbl':  'Total équivalent EUR',
+        'disclaimer':     (
+            '* Les valeurs en EUR sont approximatives basées sur les taux de change '
+            'actuels et peuvent différer des taux en vigueur au moment de chaque virement.'
+        ),
+        'months': {
+            'January': 'janvier', 'February': 'février', 'March': 'mars',
+            'April': 'avril',     'May': 'mai',           'June': 'juin',
+            'July': 'juillet',    'August': 'août',       'September': 'septembre',
+            'October': 'octobre', 'November': 'novembre', 'December': 'décembre',
+        },
+    },
+    'en': {
+        'title':          'WorldRemit Transaction Report',
+        'report_date':    'Report Generated',
+        'total_txn':      'Total Transactions',
+        'recipient':      'Recipient',
+        'period':         'Period',
+        'total_eur':      'Total EUR Equivalent',
+        'rates_note':     'Exchange rates used (approximate)',
+        'no_txn':         'No transactions found.',
+        'col_date':       'Date',
+        'col_amount':     'Amount',
+        'col_currency':   'Cur.',
+        'col_eur':        '≈ EUR',
+        'col_txn':        'Transaction #',
+        'col_subject':    'Email Subject',
+        'summary_title':  'Summary by Currency',
+        'total_eur_lbl':  'Total EUR Equivalent',
+        'disclaimer':     (
+            '* EUR values are approximate based on current exchange rates '
+            'and may differ from rates at the time of each transfer.'
+        ),
+        'months': {},
+    },
+}
+
 
 def decode_mime_str(raw: str) -> str:
     """Decode a MIME-encoded header string (handles =?utf-8?B?...?= etc.)."""
@@ -261,12 +315,16 @@ class WorldRemitExtractor:
             print(f"  Error extracting transaction data: {e}")
             return None
 
-    def search_worldremit_emails(self, recipient_name: str, start_year: int = 2021) -> List[bytes]:
-        """Search inbox for WorldRemit emails mentioning the recipient."""
+    def search_worldremit_emails(
+        self, recipient_name: str, start_year: int, end_year: int
+    ) -> List[bytes]:
+        """Search inbox for WorldRemit emails within [start_year, end_year]."""
         try:
             self.imap_server.select('INBOX')
+            # IMAP BEFORE means strictly before that date, so add 1 to include end_year fully
             search_string = (
-                f'(FROM "worldremit" BODY "{recipient_name}" SINCE "01-Jan-{start_year}")'
+                f'(FROM "worldremit" BODY "{recipient_name}" '
+                f'SINCE "01-Jan-{start_year}" BEFORE "01-Jan-{end_year + 1}")'
             )
             print(f"Searching: {search_string}")
             status, message_ids = self.imap_server.search(None, search_string)
@@ -306,12 +364,12 @@ class WorldRemitExtractor:
 
         self.transactions.append(new)
 
-    def process_emails(self, recipient_name: str, start_year: int = 2021):
+    def process_emails(self, recipient_name: str, start_year: int, end_year: int):
         """Fetch EUR rates then process all matching WorldRemit emails."""
         print("Fetching EUR exchange rates...")
         self.eur_rates = fetch_eur_rates()
 
-        email_ids = self.search_worldremit_emails(recipient_name, start_year)
+        email_ids = self.search_worldremit_emails(recipient_name, start_year, end_year)
         if not email_ids:
             print("No emails found matching the criteria.")
             return
@@ -333,6 +391,9 @@ class WorldRemitExtractor:
                     parsed_dt = dateutil_parser.parse(raw_date)
                     formatted_date = parsed_dt.strftime("%d %B %Y")   # "23 February 2024"
                     sort_key = parsed_dt.strftime("%Y-%m-%d")
+                    # Client-side guard: IMAP date filtering can be off by timezone
+                    if not (start_year <= parsed_dt.year <= end_year):
+                        continue
                 except Exception:
                     formatted_date = raw_date
                     sort_key = raw_date
@@ -374,9 +435,18 @@ class WorldRemitExtractor:
         self,
         output_file: str = "worldremit_transactions_report.pdf",
         recipient_name: str = "Patrick Kayombya",
-        start_year: int = 2021,
+        start_year: int = 2023,
+        end_year: int = 2023,
+        lang: str = 'fr',
     ):
         """Generate a professional PDF report for tax purposes."""
+        tr = TRANSLATIONS.get(lang, TRANSLATIONS['fr'])
+
+        def localise_date(date_str: str) -> str:
+            for en_month, local_month in tr['months'].items():
+                date_str = date_str.replace(en_month, local_month)
+            return date_str
+
         try:
             doc = SimpleDocTemplate(output_file, pagesize=A4)
             story = []
@@ -390,7 +460,7 @@ class WorldRemitExtractor:
                 alignment=TA_CENTER,
                 textColor=colors.darkblue,
             )
-            story.append(Paragraph("WorldRemit Transaction Report", title_style))
+            story.append(Paragraph(tr['title'], title_style))
 
             info_style = ParagraphStyle(
                 'InfoStyle',
@@ -419,31 +489,40 @@ class WorldRemitExtractor:
             for cur in sorted(currency_totals):
                 rate = self.eur_rates.get(cur, 0)
                 if rate:
-                    rate_notes.append(f"{cur}: 1 EUR ≈ {rate:.2f} {cur}")
+                    rate_notes.append(f"{cur} : 1 EUR ≈ {rate:.2f} {cur}")
             rate_note_str = "  |  ".join(rate_notes) if rate_notes else "N/A"
 
+            period_str = (
+                str(start_year) if start_year == end_year
+                else f"{start_year} – {end_year}"
+            )
+            report_date = localise_date(datetime.now().strftime("%d %B %Y"))
+
             info_text = (
-                f"<b>Report Generated:</b> {datetime.now().strftime('%d %B %Y')}<br/>"
-                f"<b>Total Transactions:</b> {len(self.transactions)}<br/>"
-                f"<b>Recipient:</b> {recipient_name}<br/>"
-                f"<b>Period:</b> {start_year} onwards<br/>"
-                f"<b>Total EUR Equivalent:</b> {eur_total:,.2f} EUR<br/>"
-                f"<i>Exchange rates used (approximate): {rate_note_str}</i>"
+                f"<b>{tr['report_date']} :</b> {report_date}<br/>"
+                f"<b>{tr['total_txn']} :</b> {len(self.transactions)}<br/>"
+                f"<b>{tr['recipient']} :</b> {recipient_name}<br/>"
+                f"<b>{tr['period']} :</b> {period_str}<br/>"
+                f"<b>{tr['total_eur']} :</b> {eur_total:,.2f} EUR<br/>"
+                f"<i>{tr['rates_note']} : {rate_note_str}</i>"
             )
             story.append(Paragraph(info_text, info_style))
             story.append(Spacer(1, 20))
 
             if not self.transactions:
-                story.append(Paragraph("No transactions found.", styles['Normal']))
+                story.append(Paragraph(tr['no_txn'], styles['Normal']))
                 doc.build(story)
                 return
 
             # Table
-            table_data = [['Date', 'Amount', 'Cur.', '≈ EUR', 'Transaction #', 'Email Subject']]
+            table_data = [[
+                tr['col_date'], tr['col_amount'], tr['col_currency'],
+                tr['col_eur'], tr['col_txn'], tr['col_subject'],
+            ]]
             for t in sorted(self.transactions, key=lambda x: x.sort_key):
                 subj = t.email_subject if len(t.email_subject) <= 38 else t.email_subject[:35] + "..."
                 table_data.append([
-                    t.date,
+                    localise_date(t.date),
                     t.amount,
                     t.currency,
                     t.amount_eur,
@@ -462,7 +541,7 @@ class WorldRemitExtractor:
                 ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
                 ('FONTSIZE', (0, 1), (-1, -1), 7.5),
                 ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('ALIGN', (1, 1), (3, -1), 'RIGHT'),   # amount columns right-aligned
+                ('ALIGN', (1, 1), (3, -1), 'RIGHT'),
                 ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.Color(0.93, 0.95, 1.0)]),
                 ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
@@ -474,16 +553,13 @@ class WorldRemitExtractor:
             summary_style = ParagraphStyle(
                 'SummaryStyle', parent=styles['Normal'], fontSize=10, leftIndent=20
             )
-            lines = ["<b>Summary by Currency:</b><br/>"]
+            lines = [f"<b>{tr['summary_title']} :</b><br/>"]
             for cur, total in sorted(currency_totals.items()):
                 rate = self.eur_rates.get(cur, 0)
                 eur_eq = total / rate if rate > 0 else 0
-                lines.append(f"{cur}: {total:,.2f}  (≈ {eur_eq:,.2f} EUR)<br/>")
-            lines.append(f"<br/><b>Total EUR Equivalent: {eur_total:,.2f} EUR</b><br/>")
-            lines.append(
-                "<i>* EUR values are approximate based on current exchange rates "
-                "and may differ from rates at the time of each transfer.</i>"
-            )
+                lines.append(f"{cur} : {total:,.2f}  (≈ {eur_eq:,.2f} EUR)<br/>")
+            lines.append(f"<br/><b>{tr['total_eur_lbl']} : {eur_total:,.2f} EUR</b><br/>")
+            lines.append(f"<i>{tr['disclaimer']}</i>")
             story.append(Paragraph("".join(lines), summary_style))
 
             doc.build(story)
@@ -524,8 +600,26 @@ def main():
     if not recipient_name:
         recipient_name = "Patrick Kayombya"
 
-    start_year_input = input("Enter start year (default: 2021): ").strip()
-    start_year = int(start_year_input) if start_year_input.isdigit() else 2021
+    print("\nPeriod / Période:")
+    print("  Single year  → enter e.g.  2023")
+    print("  Year range   → enter e.g.  2023-2024")
+    year_input = input("Year(s) [default: 2023]: ").strip() or "2023"
+
+    current_year = datetime.now().year
+    if re.match(r'^\d{4}-\d{4}$', year_input):
+        start_year, end_year = map(int, year_input.split('-'))
+    elif re.match(r'^\d{4}$', year_input):
+        start_year = end_year = int(year_input)
+    else:
+        print("Invalid format — defaulting to 2023.")
+        start_year = end_year = 2023
+
+    if start_year > end_year:
+        start_year, end_year = end_year, start_year
+    end_year = min(end_year, current_year)
+
+    lang_input = input("\nReport language / Langue du rapport (fr/en) [default: fr]: ").strip().lower()
+    lang = lang_input if lang_input in ('fr', 'en') else 'fr'
 
     extractor = WorldRemitExtractor(email_address, password)
 
@@ -533,12 +627,18 @@ def main():
         if not extractor.connect_to_email():
             return
 
-        print(f"\nSearching for WorldRemit emails for '{recipient_name}' from {start_year}...")
-        extractor.process_emails(recipient_name, start_year)
+        period_display = str(start_year) if start_year == end_year else f"{start_year}-{end_year}"
+        print(f"\nSearching WorldRemit emails for '{recipient_name}' — period: {period_display}...")
+        extractor.process_emails(recipient_name, start_year, end_year)
 
         if extractor.transactions:
             print("\nGenerating reports...")
-            extractor.generate_pdf_report(recipient_name=recipient_name, start_year=start_year)
+            extractor.generate_pdf_report(
+                recipient_name=recipient_name,
+                start_year=start_year,
+                end_year=end_year,
+                lang=lang,
+            )
             extractor.save_json_backup()
             print(f"\nDone.")
             print(f"  Transactions found : {len(extractor.transactions)}")
