@@ -6,407 +6,522 @@ Extracts WorldRemit transaction data from emails and generates PDF reports for t
 
 import imaplib
 import email
+from email.header import decode_header as _decode_header
 import re
 import json
-from datetime import datetime, date
+import urllib.request
+from datetime import datetime
 from typing import List, Dict, Optional
 from dataclasses import dataclass, asdict
 import getpass
-import sys
-from pathlib import Path
 
 from bs4 import BeautifulSoup
-from dateutil import parser
-from reportlab.lib.pagesizes import A4, letter
+from dateutil import parser as dateutil_parser
+from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
+
+
+KNOWN_CURRENCIES = {'UGX', 'USD', 'EUR', 'GBP', 'CAD', 'AUD', 'CHF', 'SEK', 'NOK', 'DKK'}
+
+
+def decode_mime_str(raw: str) -> str:
+    """Decode a MIME-encoded header string (handles =?utf-8?B?...?= etc.)."""
+    if not raw:
+        return ''
+    parts = _decode_header(raw)
+    result = ''
+    for chunk, enc in parts:
+        if isinstance(chunk, bytes):
+            result += chunk.decode(enc or 'utf-8', errors='replace')
+        else:
+            result += str(chunk)
+    return result.strip()
+
+
+def fetch_eur_rates() -> Dict[str, float]:
+    """
+    Fetch EUR-based exchange rates from open.er-api.com.
+    Returns dict where value means 1 EUR = value units of that currency.
+    Falls back to approximate 2024 rates on network failure.
+    """
+    try:
+        url = 'https://open.er-api.com/v6/latest/EUR'
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+            if data.get('result') == 'success':
+                print(f"  Exchange rates fetched ({data.get('time_last_update_utc', 'unknown')})")
+                return data['rates']
+    except Exception:
+        pass
+    print("  Warning: Could not fetch live rates. Using approximate 2024 rates.")
+    return {'UGX': 4100.0, 'USD': 1.08, 'GBP': 0.86, 'CAD': 1.47, 'AUD': 1.65, 'CHF': 0.94}
 
 
 @dataclass
 class WorldRemitTransaction:
-    """Data structure for WorldRemit transaction information."""
     date: str
     amount: str
     currency: str
+    amount_eur: str
     recipient_name: str
-    recipient_details: str
     transaction_number: str
-    sender_name: str
     email_subject: str
-    raw_email_date: str
+    sort_key: str  # ISO date string used for sorting, not displayed
 
 
 class WorldRemitExtractor:
-    """Extract WorldRemit transactions from email and generate PDF reports."""
-    
+
     def __init__(self, email_address: str, password: str):
         self.email_address = email_address
         self.password = password
         self.transactions: List[WorldRemitTransaction] = []
         self.imap_server = None
-        
+        self.eur_rates: Dict[str, float] = {}
+
     def connect_to_email(self) -> bool:
-        """Connect to email server using IMAP."""
+        """Connect to email server using IMAP (auto-detects provider from email domain)."""
+        provider_hint = ""
         try:
-            # Outlook/Hotmail IMAP settings
-            # imap_host = 'outlook.office365.com'
-            imap_host = 'imap.gmail.com'  # For testing with Gmail, change to 'outlook.office365.com' for actual use
-            imap_port = 993
-            
+            domain = self.email_address.split('@')[-1].lower()
+            if 'gmail' in domain:
+                imap_host = 'imap.gmail.com'
+                provider_hint = (
+                    "1. Enable 2-Step Verification on your Google account\n"
+                    "2. Generate an App Password at myaccount.google.com/apppasswords\n"
+                    "3. Enable IMAP in Gmail Settings → See all settings → Forwarding and POP/IMAP"
+                )
+            elif any(x in domain for x in ('outlook', 'hotmail', 'live', 'msn')):
+                imap_host = 'outlook.office365.com'
+                provider_hint = (
+                    "1. Enable 2-factor authentication on your Microsoft account\n"
+                    "2. Generate an App Password at account.microsoft.com/security\n"
+                    "3. Enable IMAP in Outlook Settings"
+                )
+            else:
+                imap_host = f'imap.{domain}'
+                provider_hint = "1. Check your email provider's IMAP settings\n2. Use an App Password"
+
+
             print(f"Connecting to {imap_host}...")
-            self.imap_server = imaplib.IMAP4_SSL(imap_host, imap_port)
+            self.imap_server = imaplib.IMAP4_SSL(imap_host, 993)
             self.imap_server.login(self.email_address, self.password)
             print("Successfully connected to email server.")
             return True
-            
+
         except imaplib.IMAP4.error as e:
             print(f"IMAP login failed: {e}")
-            print("\nTroubleshooting tips:")
-            print("1. Make sure you're using an App Password (not your regular password)")
-            print("2. Enable 2-factor authentication and generate an App Password")
-            print("3. Check if IMAP is enabled in your Outlook settings")
+            print(f"\nTroubleshooting tips:\n{provider_hint}")
             return False
         except Exception as e:
             print(f"Connection error: {e}")
             return False
-    
-    def search_worldremit_emails(self, recipient_name: str, start_year: int = "") -> List[bytes]:
-        """Search for WorldRemit emails containing the recipient name."""
+
+    def _to_eur(self, amount_str: str, currency: str) -> str:
+        """Convert an amount string to EUR using fetched rates."""
+        try:
+            amount = float(amount_str)
+            if currency == 'EUR':
+                return f"{amount:.2f}"
+            rate = self.eur_rates.get(currency, 0)
+            if rate > 0:
+                return f"{amount / rate:.2f}"
+        except (ValueError, ZeroDivisionError):
+            pass
+        return 'N/A'
+
+    def _parse_list_items(self, soup: BeautifulSoup) -> Dict:
+        """
+        Parse <li> bullet items to extract amount, currency, and transaction number.
+        Handles two WorldRemit email formats:
+          - "we're on it" checklist: transaction number / bare amount / bare currency / recipient
+          - "All done" detail list: "You sent: UGX X.XX to Uganda"
+        """
+        result = {}
+        items = [li.get_text(strip=True) for li in soup.find_all('li')]
+
+        for i, item in enumerate(items):
+            # Transaction number: "Your transaction number: 180799565"
+            # or "Your WorldRemit transfer number: 189895874"
+            tn_match = re.search(
+                r'(?:your\s+)?(?:worldremit\s+)?(?:transfer|transaction)\s+(?:number|ID|ref)[:\s]*(\d{6,12})',
+                item, re.IGNORECASE
+            )
+            if tn_match and 'transaction_number' not in result:
+                result['transaction_number'] = tn_match.group(1)
+
+            # "You sent: UGX 206247.00 to Uganda"
+            sent_match = re.search(
+                r'you\s+sent[:\s]+([A-Z]{3})\s*([\d,]+\.?\d*)',
+                item, re.IGNORECASE
+            )
+            if sent_match and 'amount' not in result:
+                result['currency'] = sent_match.group(1)
+                result['amount'] = sent_match.group(2).replace(',', '')
+
+            # Inline "UGX 206247.00" anywhere in the item
+            if 'amount' not in result:
+                inline = re.search(r'\b(' + '|'.join(KNOWN_CURRENCIES) + r')\s+([\d,]+\.\d{2})\b', item)
+                if inline:
+                    result['currency'] = inline.group(1)
+                    result['amount'] = inline.group(2).replace(',', '')
+
+            # Inline "206247.00 UGX" anywhere in the item
+            if 'amount' not in result:
+                inline2 = re.search(r'([\d,]+\.\d{2})\s+(' + '|'.join(KNOWN_CURRENCIES) + r')\b', item)
+                if inline2:
+                    result['amount'] = inline2.group(1).replace(',', '')
+                    result['currency'] = inline2.group(2)
+
+            # Bare decimal number on its own bullet (checklist format: "1162918.00")
+            if 'amount' not in result and re.match(r'^[\d,]+\.\d{1,2}$', item.strip()):
+                result['amount'] = item.strip().replace(',', '')
+                # Next bullet might be the bare currency code ("UGX")
+                if i + 1 < len(items) and items[i + 1].strip() in KNOWN_CURRENCIES:
+                    result['currency'] = items[i + 1].strip()
+
+        return result
+
+    def _parse_text_fallback(self, text: str, subject: str) -> Dict:
+        """Text-based pattern fallback when HTML list parsing comes up short."""
+        result = {}
+
+        tn_patterns = [
+            r'(?:your\s+)?(?:worldremit\s+)?(?:transfer|transaction)\s+(?:number|ID|ref)[:\s]*(\d{6,12})',
+            r'(?:transfer|transaction)\s+(\d{6,12})\s+has been',
+            r'Reference[:\s]*([A-Z0-9-]{6,})',
+        ]
+        for pat in tn_patterns:
+            m = re.search(pat, text, re.IGNORECASE | re.MULTILINE)
+            if m:
+                result['transaction_number'] = m.group(1)
+                break
+
+        # Also try extracting transaction number from the decoded subject line
+        if 'transaction_number' not in result:
+            sub_m = re.search(r'(?:transfer|transaction)\s+(\d{6,12})', subject, re.IGNORECASE)
+            if sub_m:
+                result['transaction_number'] = sub_m.group(1)
+
+        amount_patterns = [
+            (r'you\s+sent[:\s]+([A-Z]{3})\s*([\d,]+\.?\d*)', True),
+            (r'amount\s+sent[:\s]+([A-Z]{3})\s*([\d,]+\.?\d*)', True),
+            (r'\b(' + '|'.join(KNOWN_CURRENCIES) + r')\s+([\d,]+\.\d{2})\b', True),
+            (r'([\d,]+\.\d{2})\s+(' + '|'.join(KNOWN_CURRENCIES) + r')\b', False),
+        ]
+        for pat, currency_first in amount_patterns:
+            m = re.search(pat, text, re.IGNORECASE | re.MULTILINE)
+            if m:
+                g1, g2 = m.group(1), m.group(2)
+                if currency_first:
+                    result['currency'] = g1
+                    result['amount'] = g2.replace(',', '')
+                else:
+                    result['amount'] = g1.replace(',', '')
+                    result['currency'] = g2
+                break
+
+        return result
+
+    def extract_transaction_data(
+        self, content: str, formatted_date: str, sort_key: str,
+        subject: str, recipient_name: str
+    ) -> Optional[WorldRemitTransaction]:
+        """Parse email content and return a transaction record."""
+        try:
+            soup = BeautifulSoup(content, 'html.parser')
+            text = soup.get_text(separator='\n')
+
+            data = self._parse_list_items(soup)
+
+            if 'amount' not in data or 'transaction_number' not in data:
+                fallback = self._parse_text_fallback(text, subject)
+                for key in ('amount', 'currency', 'transaction_number'):
+                    if key not in data and key in fallback:
+                        data[key] = fallback[key]
+
+            amount = data.get('amount', 'N/A')
+            currency = data.get('currency', 'UGX')
+            amount_eur = self._to_eur(amount, currency) if amount != 'N/A' else 'N/A'
+
+            return WorldRemitTransaction(
+                date=formatted_date,
+                amount=amount,
+                currency=currency,
+                amount_eur=amount_eur,
+                recipient_name=recipient_name,
+                transaction_number=data.get('transaction_number', 'N/A'),
+                email_subject=subject,
+                sort_key=sort_key,
+            )
+        except Exception as e:
+            print(f"  Error extracting transaction data: {e}")
+            return None
+
+    def search_worldremit_emails(self, recipient_name: str, start_year: int = 2021) -> List[bytes]:
+        """Search inbox for WorldRemit emails mentioning the recipient."""
         try:
             self.imap_server.select('INBOX')
-            
-            # Search for emails from WorldRemit
-            search_criteria = [
-                'FROM "worldremit"',
-                f'BODY "{recipient_name}"',
-                f'SINCE "01-Jan-{start_year}"'
-            ]
-            
-            search_string = f'({" ".join(search_criteria)})'
-            print(f"Searching with criteria: {search_string}")
-            
+            search_string = (
+                f'(FROM "worldremit" BODY "{recipient_name}" SINCE "01-Jan-{start_year}")'
+            )
+            print(f"Searching: {search_string}")
             status, message_ids = self.imap_server.search(None, search_string)
-            
             if status != 'OK':
-                print("Failed to search emails")
+                print("Search failed.")
                 return []
-                
             email_ids = message_ids[0].split()
-            print(f"Found {len(email_ids)} emails matching criteria")
+            print(f"Found {len(email_ids)} emails.")
             return email_ids
-            
         except Exception as e:
             print(f"Error searching emails: {e}")
             return []
-    
-    def extract_transaction_data(self, email_content: str, email_date: str, subject: str) -> Optional[WorldRemitTransaction]:
-        """Extract transaction data from email content."""
-        try:
-            # Parse HTML content
-            soup = BeautifulSoup(email_content, 'html.parser')
-            text_content = soup.get_text()
-            
-            # Patterns to extract information
-            patterns = {
-                'amount': [
-                    r'Amount sent[:\s]+([A-Z]{3}\s*[\d,]+\.?\d*)',
-                    r'You sent[:\s]+([A-Z]{3}\s*[\d,]+\.?\d*)',
-                    r'Total[:\s]+([A-Z]{3}\s*[\d,]+\.?\d*)',
-                    r'([A-Z]{3}\s*[\d,]+\.?\d*)\s*sent',
-                ],
-                'recipient_name': [
-                    r'Recipient[:\s]+([^\n\r]+)',
-                    r'To[:\s]+([A-Z][a-zA-Z\s]+)',
-                    r'Sending to[:\s]+([^\n\r]+)',
-                ],
-                'transaction_number': [
-                    r'Transaction (?:number|ID|ref)[:\s]*([A-Z0-9-]+)',
-                    r'Reference[:\s]*([A-Z0-9-]+)',
-                    r'MTCN[:\s]*([A-Z0-9-]+)',
-                ],
-                'date': [
-                    r'Date[:\s]+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})',
-                    r'Sent on[:\s]+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})',
-                    r'(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4})',
-                ]
-            }
-            
-            extracted_data = {}
-            
-            # Extract using patterns
-            for field, pattern_list in patterns.items():
-                for pattern in pattern_list:
-                    match = re.search(pattern, text_content, re.IGNORECASE | re.MULTILINE)
-                    if match:
-                        extracted_data[field] = match.group(1).strip()
-                        break
-            
-            # Parse currency and amount
-            amount_str = extracted_data.get('amount', '')
-            currency_match = re.match(r'([A-Z]{3})', amount_str)
-            currency = currency_match.group(1) if currency_match else 'USD'
-            amount_clean = re.sub(r'[A-Z]{3}\s*', '', amount_str).replace(',', '')
-            
-            transaction = WorldRemitTransaction(
-                date=extracted_data.get('date', email_date),
-                amount=amount_clean or 'N/A',
-                currency=currency,
-                recipient_name=extracted_data.get('recipient_name', 'Marie Thérèse Clarisse'),
-                recipient_details=f"Recipient: {extracted_data.get('recipient_name', 'Marie Thérèse Clarisse')}",
-                transaction_number=extracted_data.get('transaction_number', 'N/A'),
-                sender_name=self.email_address,
-                email_subject=subject,
-                raw_email_date=email_date
-            )
-            
-            return transaction
-            
-        except Exception as e:
-            print(f"Error extracting transaction data: {e}")
-            return None
-    
+
     def process_emails(self, recipient_name: str, start_year: int = 2021):
-        """Process all WorldRemit emails and extract transaction data."""
+        """Fetch EUR rates then process all matching WorldRemit emails."""
+        print("Fetching EUR exchange rates...")
+        self.eur_rates = fetch_eur_rates()
+
         email_ids = self.search_worldremit_emails(recipient_name, start_year)
-        
         if not email_ids:
             print("No emails found matching the criteria.")
             return
-        
+
         print(f"Processing {len(email_ids)} emails...")
-        
+
         for i, email_id in enumerate(email_ids):
             try:
                 status, email_data = self.imap_server.fetch(email_id, '(RFC822)')
                 if status != 'OK':
                     continue
-                
-                raw_email = email_data[0][1]
-                email_message = email.message_from_bytes(raw_email)
-                
-                subject = email_message['Subject']
-                email_date = email_message['Date']
-                
-                # Get email content
+
+                msg = email.message_from_bytes(email_data[0][1])
+                subject = decode_mime_str(msg['Subject'])
+                raw_date = msg['Date']
+
+                # Use the RFC 2822 IMAP date header — always reliable and language-neutral
+                try:
+                    parsed_dt = dateutil_parser.parse(raw_date)
+                    formatted_date = parsed_dt.strftime("%d %B %Y")   # "23 February 2024"
+                    sort_key = parsed_dt.strftime("%Y-%m-%d")
+                except Exception:
+                    formatted_date = raw_date
+                    sort_key = raw_date
+
+                # Prefer HTML body; fall back to plain text
                 content = ""
-                if email_message.is_multipart():
-                    for part in email_message.walk():
+                if msg.is_multipart():
+                    for part in msg.walk():
                         if part.get_content_type() == "text/html":
                             content = part.get_payload(decode=True).decode('utf-8', errors='ignore')
                             break
-                        elif part.get_content_type() == "text/plain" and not content:
-                            content = part.get_payload(decode=True).decode('utf-8', errors='ignore')
+                    if not content:
+                        for part in msg.walk():
+                            if part.get_content_type() == "text/plain":
+                                content = part.get_payload(decode=True).decode('utf-8', errors='ignore')
+                                break
                 else:
-                    content = email_message.get_payload(decode=True).decode('utf-8', errors='ignore')
-                
-                # Extract transaction data
-                transaction = self.extract_transaction_data(content, email_date, subject)
+                    content = msg.get_payload(decode=True).decode('utf-8', errors='ignore')
+
+                transaction = self.extract_transaction_data(
+                    content, formatted_date, sort_key, subject, recipient_name
+                )
                 if transaction:
                     self.transactions.append(transaction)
-                    print(f"Processed email {i+1}/{len(email_ids)}: {transaction.transaction_number}")
-                
+                    print(
+                        f"  [{i+1}/{len(email_ids)}] {formatted_date} | "
+                        f"{transaction.amount} {transaction.currency} "
+                        f"(≈{transaction.amount_eur} EUR) | "
+                        f"TXN: {transaction.transaction_number}"
+                    )
+
             except Exception as e:
-                print(f"Error processing email {i+1}: {e}")
-                continue
-        
-        print(f"Successfully extracted {len(self.transactions)} transactions")
-    
-    def generate_pdf_report(self, output_file: str = "worldremit_transactions_report.pdf"):
+                print(f"  Error processing email {i+1}: {e}")
+
+        print(f"\nSuccessfully extracted {len(self.transactions)} transactions.")
+
+    def generate_pdf_report(
+        self,
+        output_file: str = "worldremit_transactions_report.pdf",
+        recipient_name: str = "Patrick Kayombya",
+        start_year: int = 2021,
+    ):
         """Generate a professional PDF report for tax purposes."""
         try:
             doc = SimpleDocTemplate(output_file, pagesize=A4)
             story = []
             styles = getSampleStyleSheet()
-            
-            # Title
+
             title_style = ParagraphStyle(
                 'CustomTitle',
                 parent=styles['Heading1'],
                 fontSize=18,
                 spaceAfter=30,
                 alignment=TA_CENTER,
-                textColor=colors.darkblue
+                textColor=colors.darkblue,
             )
-            
-            title = Paragraph("WorldRemit Transaction Report", title_style)
-            story.append(title)
-            
-            # Report info
+            story.append(Paragraph("WorldRemit Transaction Report", title_style))
+
             info_style = ParagraphStyle(
                 'InfoStyle',
                 parent=styles['Normal'],
                 fontSize=10,
                 spaceAfter=20,
-                alignment=TA_LEFT
+                alignment=TA_LEFT,
             )
-            
-            report_date = datetime.now().strftime("%B %d, %Y")
-            total_transactions = len(self.transactions)
-            total_amount = sum(float(t.amount) for t in self.transactions if t.amount != 'N/A' and t.amount.replace('.', '').isdigit())
-            
-            info_text = f"""
-            <b>Report Generated:</b> {report_date}<br/>
-            <b>Total Transactions:</b> {total_transactions}<br/>
-            <b>Recipient:</b> Marie Thérèse Clarisse<br/>
-            <b>Period:</b> 2021 onwards<br/>
-            <b>Total Amount:</b> {total_amount:.2f} (mixed currencies)<br/>
-            """
-            
-            info_para = Paragraph(info_text, info_style)
-            story.append(info_para)
+
+            # Totals per currency and EUR grand total
+            currency_totals: Dict[str, float] = {}
+            eur_total = 0.0
+            for t in self.transactions:
+                if t.amount != 'N/A':
+                    try:
+                        currency_totals[t.currency] = currency_totals.get(t.currency, 0) + float(t.amount)
+                    except ValueError:
+                        pass
+                if t.amount_eur != 'N/A':
+                    try:
+                        eur_total += float(t.amount_eur)
+                    except ValueError:
+                        pass
+
+            rate_notes = []
+            for cur in sorted(currency_totals):
+                rate = self.eur_rates.get(cur, 0)
+                if rate:
+                    rate_notes.append(f"{cur}: 1 EUR ≈ {rate:.2f} {cur}")
+            rate_note_str = "  |  ".join(rate_notes) if rate_notes else "N/A"
+
+            info_text = (
+                f"<b>Report Generated:</b> {datetime.now().strftime('%d %B %Y')}<br/>"
+                f"<b>Total Transactions:</b> {len(self.transactions)}<br/>"
+                f"<b>Recipient:</b> {recipient_name}<br/>"
+                f"<b>Period:</b> {start_year} onwards<br/>"
+                f"<b>Total EUR Equivalent:</b> {eur_total:,.2f} EUR<br/>"
+                f"<i>Exchange rates used (approximate): {rate_note_str}</i>"
+            )
+            story.append(Paragraph(info_text, info_style))
             story.append(Spacer(1, 20))
-            
+
             if not self.transactions:
-                no_data = Paragraph("No transactions found matching the criteria.", styles['Normal'])
-                story.append(no_data)
+                story.append(Paragraph("No transactions found.", styles['Normal']))
                 doc.build(story)
                 return
-            
-            # Table data
-            table_data = [
-                ['Date', 'Amount', 'Currency', 'Transaction #', 'Recipient', 'Email Subject']
-            ]
-            
-            for transaction in sorted(self.transactions, key=lambda x: x.raw_email_date):
-                # Format date
-                try:
-                    parsed_date = parser.parse(transaction.date)
-                    formatted_date = parsed_date.strftime("%Y-%m-%d")
-                except:
-                    formatted_date = transaction.date[:10] if transaction.date else "N/A"
-                
-                # Truncate long subjects
-                subject = transaction.email_subject[:40] + "..." if len(transaction.email_subject) > 40 else transaction.email_subject
-                
+
+            # Table
+            table_data = [['Date', 'Amount', 'Cur.', '≈ EUR', 'Transaction #', 'Email Subject']]
+            for t in sorted(self.transactions, key=lambda x: x.sort_key):
+                subj = t.email_subject if len(t.email_subject) <= 38 else t.email_subject[:35] + "..."
                 table_data.append([
-                    formatted_date,
-                    transaction.amount,
-                    transaction.currency,
-                    transaction.transaction_number[:15] if transaction.transaction_number else "N/A",
-                    transaction.recipient_name[:25] if transaction.recipient_name else "N/A",
-                    subject
+                    t.date,
+                    t.amount,
+                    t.currency,
+                    t.amount_eur,
+                    t.transaction_number[:15] if t.transaction_number != 'N/A' else 'N/A',
+                    subj,
                 ])
-            
-            # Create table
-            table = Table(table_data, colWidths=[1.2*inch, 0.8*inch, 0.6*inch, 1.2*inch, 1.5*inch, 2*inch])
+
+            col_widths = [1.35*inch, 0.9*inch, 0.5*inch, 0.75*inch, 1.2*inch, 2.3*inch]
+            table = Table(table_data, colWidths=col_widths)
             table.setStyle(TableStyle([
-                # Header style
                 ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 10),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                
-                # Data rows
+                ('FONTSIZE', (0, 0), (-1, 0), 9),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
                 ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                ('FONTSIZE', (0, 1), (-1, -1), 8),
-                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey]),
-                ('ALIGN', (1, 1), (1, -1), 'RIGHT'),  # Amount column right-aligned
-                ('GRID', (0, 0), (-1, -1), 1, colors.black),
-                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('FONTSIZE', (0, 1), (-1, -1), 7.5),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('ALIGN', (1, 1), (3, -1), 'RIGHT'),   # amount columns right-aligned
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.Color(0.93, 0.95, 1.0)]),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ]))
-            
             story.append(table)
-            
-            # Summary
+
+            # Summary section
             story.append(Spacer(1, 30))
             summary_style = ParagraphStyle(
-                'SummaryStyle',
-                parent=styles['Normal'],
-                fontSize=10,
-                alignment=TA_LEFT,
-                leftIndent=20
+                'SummaryStyle', parent=styles['Normal'], fontSize=10, leftIndent=20
             )
-            
-            currency_totals = {}
-            for transaction in self.transactions:
-                if transaction.amount != 'N/A' and transaction.amount.replace('.', '').isdigit():
-                    currency = transaction.currency
-                    amount = float(transaction.amount)
-                    currency_totals[currency] = currency_totals.get(currency, 0) + amount
-            
-            summary_text = "<b>Summary by Currency:</b><br/>"
-            for currency, total in currency_totals.items():
-                summary_text += f"{currency}: {total:.2f}<br/>"
-            
-            summary_para = Paragraph(summary_text, summary_style)
-            story.append(summary_para)
-            
+            lines = ["<b>Summary by Currency:</b><br/>"]
+            for cur, total in sorted(currency_totals.items()):
+                rate = self.eur_rates.get(cur, 0)
+                eur_eq = total / rate if rate > 0 else 0
+                lines.append(f"{cur}: {total:,.2f}  (≈ {eur_eq:,.2f} EUR)<br/>")
+            lines.append(f"<br/><b>Total EUR Equivalent: {eur_total:,.2f} EUR</b><br/>")
+            lines.append(
+                "<i>* EUR values are approximate based on current exchange rates "
+                "and may differ from rates at the time of each transfer.</i>"
+            )
+            story.append(Paragraph("".join(lines), summary_style))
+
             doc.build(story)
-            print(f"PDF report generated successfully: {output_file}")
-            
+            print(f"PDF report generated: {output_file}")
+
         except Exception as e:
             print(f"Error generating PDF: {e}")
-    
+
     def save_json_backup(self, output_file: str = "worldremit_transactions.json"):
         """Save extracted data as JSON backup."""
         try:
-            data = [asdict(transaction) for transaction in self.transactions]
             with open(output_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
+                json.dump([asdict(t) for t in self.transactions], f, indent=2, ensure_ascii=False)
             print(f"JSON backup saved: {output_file}")
         except Exception as e:
             print(f"Error saving JSON backup: {e}")
-    
+
     def disconnect(self):
-        """Close email connection."""
+        """Close IMAP connection."""
         if self.imap_server:
             try:
                 self.imap_server.close()
                 self.imap_server.logout()
                 print("Disconnected from email server.")
-            except:
+            except Exception:
                 pass
 
 
 def main():
-    """Main function to run the WorldRemit extractor."""
     print("=" * 60)
     print("WorldRemit Transaction Extractor for Tax Reporting")
     print("=" * 60)
-    
-    # Get email credentials
-    email_address = input("Enter your Outlook/Hotmail email address: ").strip()
+
+    email_address = input("Enter your email address: ").strip()
     password = getpass.getpass("Enter your App Password (not your regular password): ")
-    
-    # Get search parameters
-    recipient_name = input("Enter recipient name (default: Marie Thérèse Clarisse): ").strip()
+
+    recipient_name = input("Enter recipient name (default: Patrick Kayombya): ").strip()
     if not recipient_name:
-        recipient_name = "Marie Thérèse Clarisse"
-    
+        recipient_name = "Patrick Kayombya"
+
     start_year_input = input("Enter start year (default: 2021): ").strip()
     start_year = int(start_year_input) if start_year_input.isdigit() else 2021
-    
-    # Create extractor instance
+
     extractor = WorldRemitExtractor(email_address, password)
-    
+
     try:
-        # Connect and process
         if not extractor.connect_to_email():
             return
-        
+
         print(f"\nSearching for WorldRemit emails for '{recipient_name}' from {start_year}...")
         extractor.process_emails(recipient_name, start_year)
-        
+
         if extractor.transactions:
-            # Generate reports
             print("\nGenerating reports...")
-            extractor.generate_pdf_report()
+            extractor.generate_pdf_report(recipient_name=recipient_name, start_year=start_year)
             extractor.save_json_backup()
-            
-            print(f"\nReport Summary:")
-            print(f"- Total transactions found: {len(extractor.transactions)}")
-            print(f"- PDF report: worldremit_transactions_report.pdf")
-            print(f"- JSON backup: worldremit_transactions.json")
+            print(f"\nDone.")
+            print(f"  Transactions found : {len(extractor.transactions)}")
+            print(f"  PDF report         : worldremit_transactions_report.pdf")
+            print(f"  JSON backup        : worldremit_transactions.json")
         else:
             print("No transactions were found or extracted.")
-    
+
     except KeyboardInterrupt:
-        print("\nOperation cancelled by user.")
+        print("\nCancelled.")
     except Exception as e:
         print(f"An error occurred: {e}")
     finally:
