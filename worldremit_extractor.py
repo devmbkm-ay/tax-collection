@@ -280,6 +280,32 @@ class WorldRemitExtractor:
             print(f"Error searching emails: {e}")
             return []
 
+    def _upsert_transaction(self, new: WorldRemitTransaction) -> None:
+        """
+        Add a transaction, deduplicating by transaction number.
+        When two emails share the same transaction number (e.g. "We're on it!" and
+        "All done!"), keep the "All done" one — it has the most complete data.
+        Transactions with no number (N/A) are always kept separately.
+        """
+        if new.transaction_number == 'N/A':
+            self.transactions.append(new)
+            return
+
+        for idx, existing in enumerate(self.transactions):
+            if existing.transaction_number == new.transaction_number:
+                # Prefer the "All done" email; fall back to whichever has more data
+                prefer_new = 'all done' in new.email_subject.lower() or (
+                    existing.amount == 'N/A' and new.amount != 'N/A'
+                )
+                if prefer_new:
+                    self.transactions[idx] = new
+                    print(f"    → Merged duplicate TXN {new.transaction_number} (kept 'All done' email)")
+                else:
+                    print(f"    → Skipped duplicate TXN {new.transaction_number} (kept existing)")
+                return
+
+        self.transactions.append(new)
+
     def process_emails(self, recipient_name: str, start_year: int = 2021):
         """Fetch EUR rates then process all matching WorldRemit emails."""
         print("Fetching EUR exchange rates...")
@@ -330,7 +356,7 @@ class WorldRemitExtractor:
                     content, formatted_date, sort_key, subject, recipient_name
                 )
                 if transaction:
-                    self.transactions.append(transaction)
+                    self._upsert_transaction(transaction)
                     print(
                         f"  [{i+1}/{len(email_ids)}] {formatted_date} | "
                         f"{transaction.amount} {transaction.currency} "
@@ -341,7 +367,8 @@ class WorldRemitExtractor:
             except Exception as e:
                 print(f"  Error processing email {i+1}: {e}")
 
-        print(f"\nSuccessfully extracted {len(self.transactions)} transactions.")
+        print(f"\nSuccessfully extracted {len(self.transactions)} transactions "
+              f"({len(self.transactions)} unique).")
 
     def generate_pdf_report(
         self,
