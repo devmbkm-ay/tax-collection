@@ -30,6 +30,27 @@ LOGO_PATH = Path(__file__).parent / "worldremit_logo.png"
 
 KNOWN_CURRENCIES = {'UGX', 'USD', 'EUR', 'GBP', 'CAD', 'AUD', 'CHF', 'SEK', 'NOK', 'DKK'}
 
+CURRENCY_COUNTRY = {
+    'UGX': 'Uganda',
+    'KES': 'Kenya',
+    'TZS': 'Tanzania',
+    'RWF': 'Rwanda',
+    'ETB': 'Ethiopia',
+    'GHS': 'Ghana',
+    'NGN': 'Nigeria',
+    'ZAR': 'Afrique du Sud',
+    'XOF': 'Afrique de l\'Ouest',
+    'USD': 'États-Unis',
+    'GBP': 'Royaume-Uni',
+    'CAD': 'Canada',
+    'AUD': 'Australie',
+    'CHF': 'Suisse',
+    'SEK': 'Suède',
+    'NOK': 'Norvège',
+    'DKK': 'Danemark',
+    'EUR': 'Europe',
+}
+
 TRANSLATIONS = {
     'fr': {
         'title':          'Rapport de Transactions WorldRemit',
@@ -314,7 +335,7 @@ class WorldRemitExtractor:
                 recipient_name=recipient_name,
                 transaction_number=data.get('transaction_number', 'N/A'),
                 email_subject=subject,
-                country=data.get('country', ''),
+                country=data.get('country') or CURRENCY_COUNTRY.get(currency, ''),
                 sort_key=sort_key,
             )
         except Exception as e:
