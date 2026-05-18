@@ -45,7 +45,7 @@ TRANSLATIONS = {
         'col_currency':   'Devise',
         'col_eur':        '≈ EUR',
         'col_txn':        'N° Transaction',
-        'col_subject':    'Objet',
+        'col_country':    'Pays',
         'summary_title':  'Récapitulatif par devise',
         'total_eur_lbl':  'Total équivalent EUR',
         'disclaimer':     (
@@ -73,7 +73,7 @@ TRANSLATIONS = {
         'col_currency':   'Cur.',
         'col_eur':        '≈ EUR',
         'col_txn':        'Transaction #',
-        'col_subject':    'Email Subject',
+        'col_country':    'Country',
         'summary_title':  'Summary by Currency',
         'total_eur_lbl':  'Total EUR Equivalent',
         'disclaimer':     (
@@ -127,7 +127,8 @@ class WorldRemitTransaction:
     recipient_name: str
     transaction_number: str
     email_subject: str
-    sort_key: str  # ISO date string used for sorting, not displayed
+    country: str      # destination country, e.g. "Uganda"
+    sort_key: str     # ISO date string used for sorting, not displayed
 
 
 class WorldRemitExtractor:
@@ -212,12 +213,13 @@ class WorldRemitExtractor:
 
             # "You sent: UGX 206247.00 to Uganda"
             sent_match = re.search(
-                r'you\s+sent[:\s]+([A-Z]{3})\s*([\d,]+\.?\d*)',
+                r'you\s+sent[:\s]+([A-Z]{3})\s*([\d,]+\.?\d*)\s+to\s+([A-Za-z\s]+?)(?:\s*$|\s*\.)',
                 item, re.IGNORECASE
             )
             if sent_match and 'amount' not in result:
                 result['currency'] = sent_match.group(1)
                 result['amount'] = sent_match.group(2).replace(',', '')
+                result['country'] = sent_match.group(3).strip().title()
 
             # Inline "UGX 206247.00" anywhere in the item
             if 'amount' not in result:
@@ -312,6 +314,7 @@ class WorldRemitExtractor:
                 recipient_name=recipient_name,
                 transaction_number=data.get('transaction_number', 'N/A'),
                 email_subject=subject,
+                country=data.get('country', ''),
                 sort_key=sort_key,
             )
         except Exception as e:
@@ -550,20 +553,19 @@ class WorldRemitExtractor:
             # Table
             table_data = [[
                 tr['col_date'], tr['col_amount'], tr['col_currency'],
-                tr['col_eur'], tr['col_txn'], tr['col_subject'],
+                tr['col_eur'], tr['col_txn'], tr['col_country'],
             ]]
             for t in sorted(self.transactions, key=lambda x: x.sort_key):
-                subj = t.email_subject if len(t.email_subject) <= 38 else t.email_subject[:35] + "..."
                 table_data.append([
                     localise_date(t.date),
                     t.amount,
                     t.currency,
                     t.amount_eur,
-                    t.transaction_number[:15] if t.transaction_number != 'N/A' else 'N/A',
-                    subj,
+                    t.transaction_number if t.transaction_number != 'N/A' else 'N/A',
+                    t.country if t.country else '—',
                 ])
 
-            col_widths = [1.35*inch, 0.9*inch, 0.5*inch, 0.75*inch, 1.2*inch, 2.3*inch]
+            col_widths = [1.6*inch, 1.05*inch, 0.55*inch, 0.8*inch, 1.5*inch, 1.0*inch]
             table = Table(table_data, colWidths=col_widths)
             table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
