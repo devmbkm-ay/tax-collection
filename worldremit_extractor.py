@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import List, Dict, Optional
 from dataclasses import dataclass, asdict
 import getpass
+from pathlib import Path
 
 from bs4 import BeautifulSoup
 from dateutil import parser as dateutil_parser
@@ -21,8 +22,10 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
+
+LOGO_PATH = Path(__file__).parent / "worldremit_logo.png"
 
 
 KNOWN_CURRENCIES = {'UGX', 'USD', 'EUR', 'GBP', 'CAD', 'AUD', 'CHF', 'SEK', 'NOK', 'DKK'}
@@ -340,26 +343,49 @@ class WorldRemitExtractor:
 
     def _upsert_transaction(self, new: WorldRemitTransaction) -> None:
         """
-        Add a transaction, deduplicating by transaction number.
-        When two emails share the same transaction number (e.g. "We're on it!" and
-        "All done!"), keep the "All done" one — it has the most complete data.
-        Transactions with no number (N/A) are always kept separately.
+        Add a transaction, deduplicating by transaction number first, then by
+        (sort_key + amount + currency) as a fallback for cases where one email
+        failed to parse the transaction number.
+        Keeps the entry with the most data ("All done" email preferred).
         """
-        if new.transaction_number == 'N/A':
-            self.transactions.append(new)
-            return
+        def _is_duplicate(existing: WorldRemitTransaction) -> bool:
+            # Primary key: same transaction number (both known)
+            if (new.transaction_number != 'N/A'
+                    and existing.transaction_number != 'N/A'):
+                return new.transaction_number == existing.transaction_number
+            # Fallback key: same date + amount + currency
+            return (new.sort_key == existing.sort_key
+                    and new.amount == existing.amount
+                    and new.currency == existing.currency
+                    and new.amount != 'N/A')
+
+        def _prefer_new(existing: WorldRemitTransaction) -> bool:
+            # Prefer "All done" (most complete); otherwise prefer the one with a TXN number
+            if 'all done' in new.email_subject.lower():
+                return True
+            if 'all done' in existing.email_subject.lower():
+                return False
+            if new.transaction_number != 'N/A' and existing.transaction_number == 'N/A':
+                return True
+            return existing.amount == 'N/A' and new.amount != 'N/A'
 
         for idx, existing in enumerate(self.transactions):
-            if existing.transaction_number == new.transaction_number:
-                # Prefer the "All done" email; fall back to whichever has more data
-                prefer_new = 'all done' in new.email_subject.lower() or (
-                    existing.amount == 'N/A' and new.amount != 'N/A'
-                )
-                if prefer_new:
+            if _is_duplicate(existing):
+                if _prefer_new(existing):
+                    # Carry forward the transaction number if the winner lacks it
+                    if new.transaction_number == 'N/A' and existing.transaction_number != 'N/A':
+                        new = WorldRemitTransaction(**{**new.__dict__,
+                                                      'transaction_number': existing.transaction_number})
                     self.transactions[idx] = new
-                    print(f"    → Merged duplicate TXN {new.transaction_number} (kept 'All done' email)")
+                    print(f"    → Merged duplicate ({new.sort_key} {new.amount} {new.currency}) "
+                          f"— kept TXN {new.transaction_number}")
                 else:
-                    print(f"    → Skipped duplicate TXN {new.transaction_number} (kept existing)")
+                    # Carry forward the transaction number if the loser has it
+                    if existing.transaction_number == 'N/A' and new.transaction_number != 'N/A':
+                        self.transactions[idx] = WorldRemitTransaction(
+                            **{**existing.__dict__, 'transaction_number': new.transaction_number})
+                    print(f"    → Skipped duplicate ({new.sort_key} {new.amount} {new.currency}) "
+                          f"— kept TXN {self.transactions[idx].transaction_number}")
                 return
 
         self.transactions.append(new)
@@ -460,6 +486,13 @@ class WorldRemitExtractor:
                 alignment=TA_CENTER,
                 textColor=colors.darkblue,
             )
+            # Logo (optional — silently skipped if file is absent)
+            if LOGO_PATH.exists():
+                logo = Image(str(LOGO_PATH), width=2.2*inch, height=0.6*inch)
+                logo.hAlign = 'CENTER'
+                story.append(logo)
+                story.append(Spacer(1, 10))
+
             story.append(Paragraph(tr['title'], title_style))
 
             info_style = ParagraphStyle(
