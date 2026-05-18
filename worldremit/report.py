@@ -1,7 +1,9 @@
 """
-PDF report generation and JSON backup for WorldRemit transactions.
+PDF report generation, JSON backup and CSV export for WorldRemit transactions.
 """
 
+import csv
+import io
 import json
 from dataclasses import asdict
 from datetime import datetime
@@ -165,3 +167,31 @@ def save_json_backup(
         json.dump([asdict(t) for t in transactions], f, indent=2, ensure_ascii=False)
     print(f"JSON backup saved: {output_file}")
     return output_file
+
+
+def export_csv(
+    transactions: List[WorldRemitTransaction],
+    lang: str = 'fr',
+) -> str:
+    """
+    Serialise transactions to a CSV string (UTF-8 with BOM for Excel compatibility).
+    Returns the CSV content as a string.
+    """
+    from .models import TRANSLATIONS
+    tr = TRANSLATIONS.get(lang, TRANSLATIONS['fr'])
+
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter=';', quoting=csv.QUOTE_MINIMAL)
+
+    writer.writerow([
+        tr['col_date'], tr['col_amount'], tr['col_currency'],
+        tr['col_eur'], tr['col_txn'], tr['col_country'],
+    ])
+    for t in sorted(transactions, key=lambda x: x.sort_key):
+        writer.writerow([
+            t.date, t.amount, t.currency,
+            t.amount_eur, t.transaction_number, t.country or '—',
+        ])
+
+    # UTF-8 BOM so Excel opens it correctly without encoding issues
+    return '﻿' + output.getvalue()

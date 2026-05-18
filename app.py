@@ -11,8 +11,9 @@ from pathlib import Path
 import streamlit as st
 
 from worldremit import WorldRemitExtractor
+from worldremit.db import save_transactions, get_stats
 from worldremit.models import TRANSLATIONS
-from worldremit.report import generate_pdf_report, save_json_backup
+from worldremit.report import generate_pdf_report, save_json_backup, export_csv
 
 # ── Page config ─────────────────────────────────────────────────────────────
 
@@ -167,6 +168,10 @@ if "pdf_bytes" not in st.session_state:
     st.session_state.pdf_bytes = None
 if "json_str" not in st.session_state:
     st.session_state.json_str = None
+if "csv_str" not in st.session_state:
+    st.session_state.csv_str = None
+if "db_inserted" not in st.session_state:
+    st.session_state.db_inserted = None
 
 # ── Main action ───────────────────────────────────────────────────────────────
 
@@ -224,8 +229,15 @@ if generate_btn:
                 indent=2, ensure_ascii=False,
             )
 
+            st.write("💾 Sauvegarde dans la base de données…")
+            n = save_transactions(extractor.transactions)
+            st.session_state.db_inserted = n
+
+            st.write("📊 Export CSV…")
+            st.session_state.csv_str = export_csv(extractor.transactions, lang=lang_code)
+
             status.update(
-                label=f"✅ {len(extractor.transactions)} transactions extraites avec succès !",
+                label=f"✅ {len(extractor.transactions)} transactions extraites — {n} nouvelles sauvegardées.",
                 state="complete",
             )
 
@@ -278,23 +290,40 @@ if st.session_state.transactions:
 
     st.dataframe(df, use_container_width=True, hide_index=True)
 
+    # DB status
+    if st.session_state.db_inserted is not None:
+        n = st.session_state.db_inserted
+        stats = get_stats()
+        st.info(
+            f"💾 **{n}** nouvelle(s) transaction(s) sauvegardée(s) — "
+            f"**{stats['total']}** au total dans la base de données."
+        )
+
     # Downloads
     st.markdown("### 📥 Téléchargements")
-    dl1, dl2 = st.columns(2)
+    dl1, dl2, dl3 = st.columns(3)
+    period_label = (str(start_year) if start_year == end_year
+                    else f"{start_year}-{end_year}")
     with dl1:
         if st.session_state.pdf_bytes:
-            period_label = (str(start_year) if start_year == end_year
-                            else f"{start_year}-{end_year}")
             st.download_button(
-                label="⬇️ Télécharger le PDF",
+                label="⬇️ PDF",
                 data=st.session_state.pdf_bytes,
                 file_name=f"worldremit_rapport_{period_label}.pdf",
                 mime="application/pdf",
             )
     with dl2:
+        if st.session_state.csv_str:
+            st.download_button(
+                label="⬇️ CSV (Excel)",
+                data=st.session_state.csv_str.encode('utf-8-sig'),
+                file_name=f"worldremit_transactions_{period_label}.csv",
+                mime="text/csv",
+            )
+    with dl3:
         if st.session_state.json_str:
             st.download_button(
-                label="⬇️ Télécharger le JSON",
+                label="⬇️ JSON",
                 data=st.session_state.json_str,
                 file_name="worldremit_transactions.json",
                 mime="application/json",
