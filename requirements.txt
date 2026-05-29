@@ -1,6 +1,20 @@
+# Core extraction & reporting
 reportlab==4.0.4
 python-dateutil==2.8.2
 beautifulsoup4==4.12.2
 lxml==4.9.3
 secure-smtplib==0.1.1
+
+# FastAPI backend
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
+
+# Database
+pymongo>=4.7.0
+
+# Env
+python-dotenv>=1.0.0
+
+# Streamlit frontend (local / legacy)
 streamlit>=1.35.0
