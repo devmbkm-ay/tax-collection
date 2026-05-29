@@ -1,0 +1,13 @@
+{
+  "name": "tax-collection",
+  "version": "1.0.0",
+  "description": "WorldRemit Tax Report Generator - Full Stack Application",
+  "scripts": {
+    "dev:backend": "nice -n 10 venv/bin/uvicorn api:app --reload",
+    "dev:frontend": "cd frontend && nice -n 10 npm run dev",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
