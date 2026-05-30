@@ -45,9 +45,10 @@ def _connect(db_path: Path):
 
 
 def init_db(db_path: Path = DEFAULT_DB) -> None:
-    """Create the database and table if they don't exist."""
+    """Create the database and table if they don't exist, and remove malformed rows."""
     with _connect(db_path) as conn:
         conn.execute(_CREATE_TABLE)
+        conn.execute("DELETE FROM transactions WHERE amount IS NULL OR amount = '' OR amount = 'N/A'")
 
 
 def save_transactions(

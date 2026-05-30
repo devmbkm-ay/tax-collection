@@ -23,6 +23,7 @@ def _collection():
         _client = MongoClient(uri)
         _db = _client["fiscalflow"]
         coll = _db["transactions"]
+        coll = _db["transactions"]
         coll.create_index(
             [
                 ("sort_key", ASCENDING),
@@ -33,6 +34,7 @@ def _collection():
             unique=True,
             name="dedup_idx",
         )
+        coll.delete_many({"amount": {"$in": [None, "", "N/A"]}})
     return _db["transactions"]
 
 

@@ -196,6 +196,11 @@ def parse_transaction(
         amount   = data.get('amount', 'N/A')
         currency = data.get('currency', 'UGX')
 
+        # No amount → informational email (promotion, account notice, etc.), not a transfer
+        if amount == 'N/A':
+            print(f"  Skipped (no amount found): {subject!r}")
+            return None
+
         resolved_name = recipient_name or _extract_recipient_name(text, subject)
 
         return WorldRemitTransaction(
