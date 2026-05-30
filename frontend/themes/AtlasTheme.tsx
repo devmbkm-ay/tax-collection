@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { streamExtraction, downloadPdf, downloadCsv, triggerDownload, testConnection } from "@/lib/api";
+import { streamExtraction, downloadPdf, downloadCsv, triggerDownload, testConnection, updateTransaction } from "@/lib/api";
 import type { ExtractionEvent } from "@/lib/types";
 import type { Transaction, ExtractionEvent } from "@/lib/types";
 import {
@@ -465,15 +465,76 @@ function ScreenError({ message, onBack }: { message: string; onBack: () => void 
 // ── Dashboard ──────────────────────────────────────────────────────────────────
 const A_PAGE_SIZE = 20;
 
-function Dashboard({ T, go, lang, transactions, saved }: {
+type TxKey = { sort_key: string; amount: string; currency: string; transaction_number: string };
+type EditableField = "recipient_name" | "country" | "amount_eur";
+
+function Dashboard({ T, go, lang, transactions, saved, onUpdate }: {
   T: Translation; go: (s: string) => void; lang: Lang;
   transactions: Transaction[]; saved: number;
+  onUpdate: (key: TxKey, patch: Partial<Record<EditableField, string>>) => Promise<void>;
 }) {
   const [txPage, setTxPage] = useState(1);
+  const [editing, setEditing] = useState<(TxKey & { field: EditableField; value: string }) | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
   const s = summarize(transactions);
   const countries = Object.entries(s.byCountry).sort((a, b) => b[1] - a[1]);
   const recipients = Object.entries(s.byRecipient).sort((a, b) => b[1] - a[1]);
   const atd: React.CSSProperties = { padding: "11px 10px", color: A.ink, verticalAlign: "middle" };
+
+  const startEdit = (t: Transaction, field: EditableField) => {
+    setEditError(null);
+    setEditing({ sort_key: t.sort_key, amount: t.amount, currency: t.currency, transaction_number: t.transaction_number, field, value: t[field] });
+  };
+
+  const commitEdit = async () => {
+    if (!editing) return;
+    const snap = editing;
+    setEditing(null);
+    try {
+      await onUpdate(
+        { sort_key: snap.sort_key, amount: snap.amount, currency: snap.currency, transaction_number: snap.transaction_number },
+        { [snap.field]: snap.value },
+      );
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : "Erreur de sauvegarde");
+    }
+  };
+
+  const isEditing = (t: Transaction, field: EditableField) =>
+    editing?.sort_key === t.sort_key && editing?.amount === t.amount &&
+    editing?.currency === t.currency && editing?.transaction_number === t.transaction_number &&
+    editing?.field === field;
+
+  // Returns a <td> directly — plain function, not a React component, to avoid focus loss on re-render
+  const editCell = (t: Transaction, field: EditableField, display: React.ReactNode, extraTdStyle: React.CSSProperties = {}) => {
+    if (isEditing(t, field)) {
+      return (
+        <td style={atd}>
+          <input
+            autoFocus
+            value={editing!.value}
+            onChange={e => setEditing(ed => ed ? { ...ed, value: e.target.value } : null)}
+            onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditing(null); }}
+            onBlur={commitEdit}
+            style={{
+              background: A.accentSoft, border: "none", outline: `1.5px solid ${A.accent}`,
+              borderRadius: 4, padding: "3px 6px", fontFamily: SANS, fontSize: 12.5,
+              color: A.ink, width: "100%", minWidth: 80, boxSizing: "border-box",
+            }}
+          />
+        </td>
+      );
+    }
+    return (
+      <td
+        onClick={() => startEdit(t, field)}
+        title={lang === "fr" ? "Cliquer pour modifier" : "Click to edit"}
+        style={{ ...atd, cursor: "text", ...extraTdStyle }}
+      >
+        <span style={{ borderBottom: `1px dashed ${A.lineSoft}` }}>{display}</span>
+      </td>
+    );
+  };
   const sorted = transactions.slice().sort((a, b) => a.sort_key.localeCompare(b.sort_key));
   const totalPages = Math.ceil(sorted.length / A_PAGE_SIZE);
   const pageRows = sorted.slice((txPage - 1) * A_PAGE_SIZE, txPage * A_PAGE_SIZE);
@@ -546,13 +607,20 @@ function Dashboard({ T, go, lang, transactions, saved }: {
                 </tr>
               </thead>
               <tbody>
+                {editError && (
+                  <tr>
+                    <td colSpan={6} style={{ padding: "6px 10px", background: "#fee", color: "#c00", fontFamily: MONO, fontSize: 11 }}>
+                      ✗ {editError}
+                    </td>
+                  </tr>
+                )}
                 {pageRows.map((t, i) => (
                   <tr key={`${t.sort_key}-${t.amount}-${t.currency}-${i}`} style={{ borderBottom: "1px solid " + A.lineSoft }}>
                     <td style={atd}>{t.date}</td>
-                    <td style={{ ...atd, fontWeight: 600 }}>{t.recipient_name}</td>
-                    <td style={atd}><span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><Flag code={COUNTRY_CODE[t.country]} size={16} />{t.country}</span></td>
+                    {editCell(t, "recipient_name", <span style={{ fontWeight: 600 }}>{t.recipient_name}</span>)}
+                    {editCell(t, "country", <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><Flag code={COUNTRY_CODE[t.country]} size={16} />{t.country}</span>)}
                     <td style={{ ...atd, textAlign: "right", fontFamily: MONO }}>{formatAmount(t.amount, t.currency)}</td>
-                    <td style={{ ...atd, textAlign: "right", fontFamily: MONO, fontWeight: 600 }}>{formatEURp(parseFloat(t.amount_eur))}</td>
+                    {editCell(t, "amount_eur", <span style={{ fontFamily: MONO, fontWeight: 600 }}>{formatEURp(parseFloat(t.amount_eur))}</span>, { textAlign: "right" })}
                     <td style={{ ...atd, textAlign: "right", fontFamily: MONO, fontSize: 11, color: A.muted }}>{t.transaction_number}</td>
                   </tr>
                 ))}
@@ -719,7 +787,19 @@ export default function AtlasTheme() {
           </>
         )}
         {screen === "loading" && <ScreenLoading lang={lang} step={extractStep} meta={extractMeta} />}
-        {screen === "dashboard" && <Dashboard T={T} go={go} lang={lang} transactions={transactions} saved={saved} />}
+        {screen === "dashboard" && (
+          <Dashboard
+            T={T} go={go} lang={lang} transactions={transactions} saved={saved}
+            onUpdate={async (key, patch) => {
+              await updateTransaction(key, patch);
+              setTransactions(prev => prev.map(t =>
+                t.sort_key === key.sort_key && t.amount === key.amount &&
+                t.currency === key.currency && t.transaction_number === key.transaction_number
+                  ? { ...t, ...patch } : t
+              ));
+            }}
+          />
+        )}
         {screen === "pdf" && (
           <ScreenPdf T={T} go={go} lang={lang} transactions={transactions} eurRates={eurRates}
             recipientNames={formMeta.recipientNames} startYear={formMeta.startYear} endYear={formMeta.endYear} />

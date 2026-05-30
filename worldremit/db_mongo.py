@@ -106,6 +106,20 @@ def load_transactions(
     return txns, total
 
 
+def update_transaction(key: dict, patch: dict) -> int:
+    """Update editable fields of a transaction identified by its natural key."""
+    allowed = {"recipient_name", "country", "amount_eur"}
+    safe = {k: v for k, v in patch.items() if k in allowed}
+    if not safe:
+        return 0
+    coll = _collection()
+    result = coll.update_one(
+        {k: key[k] for k in ("sort_key", "amount", "currency", "transaction_number")},
+        {"$set": safe},
+    )
+    return result.modified_count
+
+
 def get_stats() -> dict:
     coll = _collection()
     total = coll.count_documents({})

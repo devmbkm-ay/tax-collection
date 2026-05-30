@@ -24,9 +24,9 @@ from worldremit.report import generate_pdf_report, export_csv
 # ── DB backend — MongoDB in production, SQLite locally ──────────────────────
 
 if os.getenv("MONGODB_URI"):
-    from worldremit.db_mongo import save_transactions, load_transactions, get_stats
+    from worldremit.db_mongo import save_transactions, load_transactions, get_stats, update_transaction as update_transaction_db
 else:
-    from worldremit.db import save_transactions, load_transactions, get_stats
+    from worldremit.db import save_transactions, load_transactions, get_stats, update_transaction as update_transaction_db
 
 # ── App setup ────────────────────────────────────────────────────────────────
 
@@ -62,6 +62,16 @@ class ExtractRequest(BaseModel):
 class TestConnectionRequest(BaseModel):
     email: str
     password: str
+
+
+class UpdateTransactionRequest(BaseModel):
+    sort_key: str
+    amount: str
+    currency: str
+    transaction_number: str
+    recipient_name: Optional[str] = None
+    country: Optional[str] = None
+    amount_eur: Optional[str] = None
 
 
 class ReportRequest(BaseModel):
@@ -257,6 +267,31 @@ async def report_csv(req: ReportRequest):
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="transactions_{period}.csv"'},
     )
+
+
+@app.patch("/api/transactions")
+async def patch_transaction(req: UpdateTransactionRequest):
+    """Update editable fields (recipient_name, country, amount_eur) of a stored transaction."""
+    key = {
+        "sort_key": req.sort_key,
+        "amount": req.amount,
+        "currency": req.currency,
+        "transaction_number": req.transaction_number,
+    }
+    patch = {k: v for k, v in {
+        "recipient_name": req.recipient_name,
+        "country": req.country,
+        "amount_eur": req.amount_eur,
+    }.items() if v is not None}
+
+    if not patch:
+        raise HTTPException(status_code=400, detail="No updatable fields provided.")
+
+    updated = update_transaction_db(key, patch)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Transaction not found.")
+
+    return {"updated": updated}
 
 
 @app.get("/api/transactions")

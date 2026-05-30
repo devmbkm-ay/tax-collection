@@ -132,6 +132,28 @@ def load_transactions(
     return txns, total
 
 
+def update_transaction(key: dict, patch: dict, db_path: Path = DEFAULT_DB) -> int:
+    """Update editable fields of a transaction identified by its natural key.
+    Returns the number of rows updated (0 = not found, 1 = success)."""
+    if not db_path.exists():
+        return 0
+    allowed = {"recipient_name", "country", "amount_eur"}
+    safe = {k: v for k, v in patch.items() if k in allowed}
+    if not safe:
+        return 0
+    set_clause = ", ".join(f"{k} = ?" for k in safe)
+    params = list(safe.values()) + [
+        key["sort_key"], key["amount"], key["currency"], key["transaction_number"]
+    ]
+    with _connect(db_path) as conn:
+        cur = conn.execute(
+            f"UPDATE transactions SET {set_clause} "
+            f"WHERE sort_key=? AND amount=? AND currency=? AND transaction_number=?",
+            params,
+        )
+        return cur.rowcount
+
+
 def get_stats(db_path: Path = DEFAULT_DB) -> dict:
     """Return basic statistics about the stored transactions."""
     if not db_path.exists():

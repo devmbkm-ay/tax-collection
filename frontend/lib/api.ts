@@ -72,6 +72,21 @@ export async function extractTransactions(payload: {
   return res.json();
 }
 
+export async function updateTransaction(
+  key: { sort_key: string; amount: string; currency: string; transaction_number: string },
+  patch: { recipient_name?: string; country?: string; amount_eur?: string },
+): Promise<void> {
+  const res = await fetch(`${BASE}/api/transactions`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...key, ...patch }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail ?? "Mise à jour échouée");
+  }
+}
+
 export async function downloadPdf(payload: ReportPayload): Promise<Blob> {
   const res = await fetch(`${BASE}/api/report/pdf`, {
     method: "POST",
