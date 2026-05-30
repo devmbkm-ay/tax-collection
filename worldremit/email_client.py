@@ -65,6 +65,29 @@ def _prefer_new(new: WorldRemitTransaction, existing: WorldRemitTransaction) -> 
     return existing.amount == 'N/A' and new.amount != 'N/A'
 
 
+def probe_connection(email_address: str, password: str) -> tuple[bool, str]:
+    """Fast IMAP probe: LOGIN + SELECT INBOX + LOGOUT. Returns (ok, message)."""
+    host, hint = _imap_config(email_address)
+    try:
+        conn = imaplib.IMAP4_SSL(host, 993, timeout=10)
+        try:
+            conn.login(email_address, password)
+            conn.select("INBOX")
+            conn.logout()
+        except imaplib.IMAP4.error as e:
+            err = str(e).lower()
+            if any(k in err for k in ("authenticationfailed", "invalid credentials", "authentication failed")):
+                return False, "Identifiants incorrects. Vérifiez votre mot de passe d'application."
+            if "application-specific" in err or "app password" in err:
+                return False, "Mot de passe d'application requis (pas votre mot de passe habituel)."
+            return False, f"Erreur IMAP : {e}"
+        return True, f"Connecté à {host} avec succès."
+    except OSError:
+        return False, "Impossible de joindre le serveur IMAP. Vérifiez que IMAP est activé dans vos paramètres mail."
+    except Exception as e:
+        return False, f"Erreur de connexion : {e}"
+
+
 class EmailClient:
     """Thin IMAP wrapper — connect, search, fetch, disconnect."""
 

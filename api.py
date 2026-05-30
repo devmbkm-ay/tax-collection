@@ -56,6 +56,11 @@ class ExtractRequest(BaseModel):
     lang: str = "fr"
 
 
+class TestConnectionRequest(BaseModel):
+    email: str
+    password: str
+
+
 class ReportRequest(BaseModel):
     transactions: list
     eur_rates: dict = {}
@@ -71,6 +76,17 @@ class ReportRequest(BaseModel):
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.post("/api/test-connection")
+async def test_connection(req: TestConnectionRequest):
+    """Fast IMAP probe — returns 200 on success, 400 with a friendly message on failure."""
+    from worldremit.email_client import probe_connection
+    loop = asyncio.get_event_loop()
+    ok, message = await loop.run_in_executor(None, probe_connection, req.email, req.password)
+    if not ok:
+        raise HTTPException(status_code=400, detail=message)
+    return {"message": message}
 
 
 @app.post("/api/extract")

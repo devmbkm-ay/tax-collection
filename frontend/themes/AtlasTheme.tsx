@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { extractTransactions, downloadPdf, downloadCsv, triggerDownload } from "@/lib/api";
+import { extractTransactions, downloadPdf, downloadCsv, triggerDownload, testConnection } from "@/lib/api";
 import type { Transaction, ExtractResponse } from "@/lib/types";
 import {
   type Translation,
@@ -241,10 +241,25 @@ function ScreenEmail({ T, go, lang, onExtract }: {
   const [recipients, setRecipients] = useState<string[]>([""]);
   const [startYear, setStartYear] = useState(String(new Date().getFullYear() - 1));
   const [endYear, setEndYear] = useState(String(new Date().getFullYear() - 1));
+  const [testStatus, setTestStatus] = useState<"idle" | "testing" | "ok" | "error">("idle");
+  const [testMsg, setTestMsg] = useState("");
 
   const setRecipient = (i: number, v: string) => setRecipients(rs => rs.map((r, j) => j === i ? v : r));
   const addRecipient = () => setRecipients(rs => [...rs, ""]);
   const removeRecipient = (i: number) => setRecipients(rs => rs.length > 1 ? rs.filter((_, j) => j !== i) : [""]);
+
+  const handleTest = async () => {
+    setTestStatus("testing");
+    setTestMsg("");
+    try {
+      const msg = await testConnection(email, pw);
+      setTestMsg(msg);
+      setTestStatus("ok");
+    } catch (e) {
+      setTestMsg(e instanceof Error ? e.message : "Erreur inconnue");
+      setTestStatus("error");
+    }
+  };
 
   const submit = () => {
     if (!email || !pw) return;
@@ -265,8 +280,37 @@ function ScreenEmail({ T, go, lang, onExtract }: {
             {lang === "fr" ? "Identifiants" : "Credentials"}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <AInput label={T.email_label} value={email} onChange={setEmail} placeholder="vous@gmail.com" />
-            <AInput label={T.pw_label} value={pw} onChange={setPw} type="password" placeholder="xxxx xxxx xxxx xxxx" hint={T.pw_hint} />
+            <AInput label={T.email_label} value={email} onChange={(v) => { setEmail(v); setTestStatus("idle"); }} placeholder="vous@gmail.com" />
+            <AInput label={T.pw_label} value={pw} onChange={(v) => { setPw(v); setTestStatus("idle"); }} type="password" placeholder="xxxx xxxx xxxx xxxx" hint={T.pw_hint} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <button
+                onClick={handleTest}
+                disabled={!email || !pw || testStatus === "testing"}
+                style={{
+                  background: "none",
+                  border: "1px solid " + (testStatus === "ok" ? A.good : testStatus === "error" ? "#C00" : A.line),
+                  borderRadius: 8, padding: "8px 14px", textAlign: "left",
+                  fontFamily: MONO, fontSize: 11, letterSpacing: 0.5,
+                  color: testStatus === "ok" ? A.good : testStatus === "error" ? "#C00" : A.ink,
+                  cursor: (!email || !pw || testStatus === "testing") ? "default" : "pointer",
+                  opacity: (!email || !pw) ? 0.4 : 1,
+                  transition: "border-color 0.15s, color 0.15s",
+                }}
+              >
+                {testStatus === "testing"
+                  ? "Connexion en cours…"
+                  : testStatus === "ok"
+                  ? "✓ Connecté"
+                  : testStatus === "error"
+                  ? "✗ Échec — réessayer"
+                  : "⚡ Tester la connexion"}
+              </button>
+              {(testStatus === "ok" || testStatus === "error") && (
+                <div style={{ fontSize: 11, color: testStatus === "ok" ? A.good : "#C00", fontFamily: MONO, lineHeight: 1.5 }}>
+                  {testMsg}
+                </div>
+              )}
+            </div>
             <div>
               <div style={{ fontFamily: MONO, fontSize: 10, color: A.muted, letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>{T.recipient_label}</div>
               {recipients.map((r, i) => (
