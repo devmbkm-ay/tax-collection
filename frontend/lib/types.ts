@@ -23,6 +23,18 @@ export interface Stats {
   year_range: [number, number] | null;
 }
 
+export interface ExtractionEvent {
+  step: string;
+  message?: string;
+  found?: number;
+  current?: number;
+  total?: number;
+  transactions?: Transaction[];
+  eur_rates?: Record<string, number>;
+  saved?: number;
+  stats?: Stats;
+}
+
 export interface ReportPayload {
   transactions: Transaction[];
   eur_rates: Record<string, number>;

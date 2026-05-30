@@ -170,12 +170,16 @@ class EmailClient:
         start_year: int,
         end_year: int,
         eur_rates: dict,
+        on_progress=None,
     ) -> List[WorldRemitTransaction]:
         """
         Search, fetch and deduplicate all WorldRemit transactions for one or
         more recipients. Runs a separate IMAP search per name and merges results.
         """
         # Collect unique email IDs across all recipient queries
+        if on_progress:
+            on_progress(step="searching")
+
         all_ids: List[bytes] = []
         seen_ids: set = set()
         for name in recipient_names:
@@ -184,6 +188,9 @@ class EmailClient:
                     seen_ids.add(eid)
                     all_ids.append(eid)
 
+        if on_progress:
+            on_progress(step="found", found=len(all_ids))
+
         if not all_ids:
             return []
 
@@ -191,6 +198,8 @@ class EmailClient:
         print(f"Processing {len(all_ids)} emails...")
 
         for i, email_id in enumerate(all_ids):
+            if on_progress:
+                on_progress(step="parsing", current=i + 1, total=len(all_ids))
             msg = self.fetch_message(email_id)
             if not msg:
                 continue

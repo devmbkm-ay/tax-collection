@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { extractTransactions, downloadPdf, downloadCsv, triggerDownload, testConnection } from "@/lib/api";
-import type { Transaction, ExtractResponse } from "@/lib/types";
+import { streamExtraction, downloadPdf, downloadCsv, triggerDownload, testConnection } from "@/lib/api";
+import type { ExtractionEvent } from "@/lib/types";
+import type { Transaction, ExtractionEvent } from "@/lib/types";
 import {
   type Translation,
   summarize, formatEUR, formatEURp, formatAmount,
@@ -364,17 +365,83 @@ function ScreenEmail({ T, go, lang, onExtract }: {
 }
 
 // ── Loading ───────────────────────────────────────────────────────────────────
-function ScreenLoading({ T }: { T: Translation }) {
+const EXTRACT_STEPS: Array<{ key: string; fr: string; en: string }> = [
+  { key: "connecting", fr: "Connexion à la boîte mail",   en: "Connecting to inbox" },
+  { key: "rates",      fr: "Taux de change EUR",           en: "EUR exchange rates" },
+  { key: "found",      fr: "Recherche des emails",         en: "Searching emails" },
+  { key: "parsing",    fr: "Analyse des transactions",     en: "Parsing transactions" },
+  { key: "saving",     fr: "Sauvegarde en base",           en: "Saving to database" },
+];
+
+const STEP_IDX: Record<string, number> = {
+  connecting: 0, rates: 1, searching: 2, found: 2, parsing: 3, saving: 4,
+};
+
+function ScreenLoading({ lang, step, meta }: {
+  lang: Lang;
+  step: string;
+  meta: { found?: number; current?: number; total?: number };
+}) {
+  const activeIdx = STEP_IDX[step] ?? -1;
+
   return (
-    <div style={{ flex: 1, display: "grid", placeItems: "center", padding: 48 }}>
-      <div style={{ textAlign: "center" }}>
-        <div style={{
-          width: 56, height: 56, margin: "0 auto 22px",
-          border: "2px solid " + A.line, borderTopColor: A.accent,
-          borderRadius: "50%", animation: "atlasSpin 0.9s linear infinite",
-        }} />
-        <div style={{ fontFamily: DISPLAY, fontSize: 24, color: A.ink, fontWeight: 600, letterSpacing: -0.5 }}>{T.scanning}</div>
-        <div style={{ fontFamily: MONO, fontSize: 11, color: A.muted, marginTop: 8, letterSpacing: 1 }}>SCAN · INBOX · IMAP</div>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 40px" }}>
+      <div style={{ width: "100%", maxWidth: 340 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 24 }}>
+          {EXTRACT_STEPS.map((s, idx) => {
+            const isDone   = idx < activeIdx;
+            const isActive = idx === activeIdx;
+            const label    = lang === "fr" ? s.fr : s.en;
+
+            let sub = "";
+            if (s.key === "found"   && isActive && meta.found   !== undefined)
+              sub = ` · ${meta.found} email${meta.found !== 1 ? "s" : ""}`;
+            if (s.key === "parsing" && isActive && meta.total   !== undefined)
+              sub = ` · ${meta.current}/${meta.total}`;
+
+            return (
+              <div key={s.key} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{
+                  width: 22, height: 22, borderRadius: "50%", flexShrink: 0,
+                  background: isDone ? A.good : isActive ? A.ink : A.surface2,
+                  border: `1px solid ${isDone ? A.good : isActive ? A.ink : A.line}`,
+                  display: "grid", placeItems: "center",
+                }}>
+                  {isDone   && <span style={{ color: "#fff", fontSize: 11, lineHeight: 1 }}>✓</span>}
+                  {isActive && <div style={{ width: 7, height: 7, borderRadius: "50%", background: A.accent }} />}
+                </div>
+                <div>
+                  <span style={{
+                    fontFamily: MONO, fontSize: 12,
+                    color: isDone ? A.good : isActive ? A.ink : A.muted,
+                    fontWeight: isActive || isDone ? 600 : 400,
+                  }}>{label}</span>
+                  {sub && <span style={{ fontFamily: MONO, fontSize: 11, color: A.muted }}>{sub}</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {step === "parsing" && meta.total !== undefined && (
+          <div style={{ height: 3, background: A.surface2, borderRadius: 99, overflow: "hidden" }}>
+            <div style={{
+              height: "100%", background: A.accent, borderRadius: 99,
+              width: `${((meta.current ?? 0) / meta.total) * 100}%`,
+              transition: "width 0.1s ease",
+            }} />
+          </div>
+        )}
+
+        {!step && (
+          <div style={{ textAlign: "center", marginTop: 8 }}>
+            <div style={{
+              width: 36, height: 36, margin: "0 auto",
+              border: `2px solid ${A.line}`, borderTopColor: A.accent,
+              borderRadius: "50%", animation: "atlasSpin 0.9s linear infinite",
+            }} />
+          </div>
+        )}
       </div>
       <style>{`@keyframes atlasSpin { to { transform: rotate(360deg); } }`}</style>
     </div>
@@ -599,6 +666,8 @@ export default function AtlasTheme() {
   const [saved, setSaved] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [formMeta, setFormMeta] = useState({ recipientNames: [] as string[], startYear: 2024, endYear: 2024 });
+  const [extractStep, setExtractStep] = useState<string>("");
+  const [extractMeta, setExtractMeta] = useState<Pick<ExtractionEvent, "found" | "current" | "total">>({});
 
   const T = I18N[lang];
 
@@ -606,17 +675,31 @@ export default function AtlasTheme() {
 
   const handleExtract = async (vals: { email: string; password: string; recipient_names: string[]; start_year: number; end_year: number }) => {
     setFormMeta({ recipientNames: vals.recipient_names, startYear: vals.start_year, endYear: vals.end_year });
+    setExtractStep("connecting");
+    setExtractMeta({});
     setScreen("loading");
     try {
-      const data: ExtractResponse = await extractTransactions({ ...vals, lang });
-      if (data.transactions.length === 0) {
-        setError("Aucune transaction trouvée pour cette période.");
-        setScreen("email");
-      } else {
-        setTransactions(data.transactions);
-        setEurRates(data.eur_rates);
-        setSaved(data.saved);
-        setScreen("dashboard");
+      for await (const event of streamExtraction({ ...vals, lang })) {
+        if (event.step === "error") {
+          setError(event.message ?? "Erreur inconnue.");
+          setScreen("email");
+          return;
+        }
+        if (event.step === "done") {
+          if (!event.transactions?.length) {
+            setError("Aucune transaction trouvée pour cette période.");
+            setScreen("email");
+          } else {
+            setTransactions(event.transactions);
+            setEurRates(event.eur_rates!);
+            setSaved(event.saved!);
+            setScreen("dashboard");
+          }
+          return;
+        }
+        setExtractStep(event.step);
+        if (event.step === "found") setExtractMeta({ found: event.found });
+        if (event.step === "parsing") setExtractMeta(m => ({ ...m, current: event.current, total: event.total }));
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur de connexion.");
@@ -635,7 +718,7 @@ export default function AtlasTheme() {
             <ScreenEmail T={T} go={go} lang={lang} onExtract={handleExtract} />
           </>
         )}
-        {screen === "loading" && <ScreenLoading T={T} />}
+        {screen === "loading" && <ScreenLoading lang={lang} step={extractStep} meta={extractMeta} />}
         {screen === "dashboard" && <Dashboard T={T} go={go} lang={lang} transactions={transactions} saved={saved} />}
         {screen === "pdf" && (
           <ScreenPdf T={T} go={go} lang={lang} transactions={transactions} eurRates={eurRates}

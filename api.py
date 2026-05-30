@@ -4,15 +4,18 @@ Run locally: uvicorn api:app --reload
 """
 
 import asyncio
+import json
 import os
+import queue
 import tempfile
+import threading
 from dataclasses import asdict
 from pathlib import Path
 from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 from worldremit import WorldRemitExtractor
@@ -87,6 +90,70 @@ async def test_connection(req: TestConnectionRequest):
     if not ok:
         raise HTTPException(status_code=400, detail=message)
     return {"message": message}
+
+
+@app.post("/api/extract/stream")
+async def extract_stream(req: ExtractRequest):
+    """SSE stream of extraction progress. Emits JSON events until 'done' or 'error'."""
+    from worldremit.email_client import EmailClient
+    from worldremit.exchange import fetch_eur_rates
+
+    q: queue.Queue = queue.Queue()
+
+    def emit(**kwargs):
+        q.put(kwargs)
+
+    def run():
+        try:
+            emit(step="connecting")
+            client = EmailClient(req.email, req.password)
+            if not client.connect():
+                emit(step="error", message="Connexion échouée. Vérifiez vos identifiants et le mot de passe d'application.")
+                return
+
+            emit(step="rates")
+            eur_rates = fetch_eur_rates()
+
+            names: List[Optional[str]] = req.recipient_names or (
+                [req.recipient_name] if req.recipient_name else [None]
+            )
+
+            transactions = client.fetch_transactions(
+                names, req.start_year, req.end_year, eur_rates,
+                on_progress=emit,
+            )
+            client.disconnect()
+
+            emit(step="saving")
+            saved = save_transactions(transactions) if transactions else 0
+
+            emit(
+                step="done",
+                transactions=[asdict(t) for t in transactions],
+                eur_rates=eur_rates,
+                saved=saved,
+                stats=get_stats(),
+            )
+        except Exception as e:
+            emit(step="error", message=str(e))
+        finally:
+            q.put(None)
+
+    async def event_stream():
+        loop = asyncio.get_running_loop()
+        t = threading.Thread(target=run, daemon=True)
+        t.start()
+        while True:
+            event = await loop.run_in_executor(None, q.get)
+            if event is None:
+                break
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/api/extract")
