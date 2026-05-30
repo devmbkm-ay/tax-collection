@@ -95,6 +95,36 @@ const AInput = ({ label, value, onChange, type = "text", placeholder, hint }: {
   </label>
 );
 
+// ── Toast ─────────────────────────────────────────────────────────────────────
+type ToastKind = "ok" | "error" | "info";
+interface ToastItem { id: number; kind: ToastKind; message: string }
+
+function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: number) => void }) {
+  if (!toasts.length) return null;
+  const bg: Record<ToastKind, string> = { ok: A.good, error: "#C00", info: A.ink };
+  return (
+    <div style={{ position: "fixed", bottom: 24, right: 24, display: "flex", flexDirection: "column-reverse", gap: 8, zIndex: 9999, pointerEvents: "none" }}>
+      {toasts.map(t => (
+        <div key={t.id} style={{
+          display: "flex", alignItems: "center", gap: 10,
+          background: bg[t.kind], color: "#fff",
+          padding: "10px 14px", borderRadius: 10,
+          fontFamily: MONO, fontSize: 12, letterSpacing: 0.3, lineHeight: 1.4,
+          boxShadow: "0 4px 20px rgba(0,0,0,0.22)", maxWidth: 340,
+          animation: "toastIn 0.18s ease", pointerEvents: "all",
+        }}>
+          <span style={{ flex: 1 }}>{t.message}</span>
+          <button onClick={() => onDismiss(t.id)} style={{
+            background: "none", border: "none", color: "rgba(255,255,255,0.65)",
+            cursor: "pointer", fontSize: 16, padding: 0, lineHeight: 1, flexShrink: 0,
+          }}>×</button>
+        </div>
+      ))}
+      <style>{`@keyframes toastIn { from { opacity:0; transform:translateX(12px); } to { opacity:1; transform:translateX(0); } }`}</style>
+    </div>
+  );
+}
+
 // ── Sidebar ──────────────────────────────────────────────────────────────────
 function Sidebar({ screen, go, lang, setLang }: {
   screen: string; go: (s: string) => void; lang: Lang; setLang: (l: Lang) => void
@@ -472,17 +502,16 @@ function Dashboard({ T, go, lang, transactions, saved, onUpdate }: {
   T: Translation; go: (s: string) => void; lang: Lang;
   transactions: Transaction[]; saved: number;
   onUpdate: (key: TxKey, patch: Partial<Record<EditableField, string>>) => Promise<void>;
+  onToast: (kind: ToastKind, message: string) => void;
 }) {
   const [txPage, setTxPage] = useState(1);
   const [editing, setEditing] = useState<(TxKey & { field: EditableField; value: string }) | null>(null);
-  const [editError, setEditError] = useState<string | null>(null);
   const s = summarize(transactions);
   const countries = Object.entries(s.byCountry).sort((a, b) => b[1] - a[1]);
   const recipients = Object.entries(s.byRecipient).sort((a, b) => b[1] - a[1]);
   const atd: React.CSSProperties = { padding: "11px 10px", color: A.ink, verticalAlign: "middle" };
 
   const startEdit = (t: Transaction, field: EditableField) => {
-    setEditError(null);
     setEditing({ sort_key: t.sort_key, amount: t.amount, currency: t.currency, transaction_number: t.transaction_number, field, value: t[field] });
   };
 
@@ -495,8 +524,9 @@ function Dashboard({ T, go, lang, transactions, saved, onUpdate }: {
         { sort_key: snap.sort_key, amount: snap.amount, currency: snap.currency, transaction_number: snap.transaction_number },
         { [snap.field]: snap.value },
       );
+      onToast("ok", lang === "fr" ? "Modification enregistrée" : "Change saved");
     } catch (e) {
-      setEditError(e instanceof Error ? e.message : "Erreur de sauvegarde");
+      onToast("error", e instanceof Error ? e.message : "Erreur de sauvegarde");
     }
   };
 
@@ -607,13 +637,6 @@ function Dashboard({ T, go, lang, transactions, saved, onUpdate }: {
                 </tr>
               </thead>
               <tbody>
-                {editError && (
-                  <tr>
-                    <td colSpan={6} style={{ padding: "6px 10px", background: "#fee", color: "#c00", fontFamily: MONO, fontSize: 11 }}>
-                      ✗ {editError}
-                    </td>
-                  </tr>
-                )}
                 {pageRows.map((t, i) => (
                   <tr key={`${t.sort_key}-${t.amount}-${t.currency}-${i}`} style={{ borderBottom: "1px solid " + A.lineSoft }}>
                     <td style={atd}>{t.date}</td>
@@ -660,10 +683,11 @@ function Kpi({ label, value, accent = false }: { label: string; value: string; a
 }
 
 // ── PDF / Downloads ────────────────────────────────────────────────────────────
-function ScreenPdf({ T, go, lang, transactions, eurRates, recipientNames, startYear, endYear }: {
+function ScreenPdf({ T, go, lang, transactions, eurRates, recipientNames, startYear, endYear, onToast }: {
   T: Translation; go: (s: string) => void; lang: Lang;
   transactions: Transaction[]; eurRates: Record<string, number>;
   recipientNames: string[]; startYear: number; endYear: number;
+  onToast: (kind: ToastKind, message: string) => void;
 }) {
   const s = summarize(transactions);
   const [loading, setLoading] = useState<string | null>(null);
@@ -671,9 +695,28 @@ function ScreenPdf({ T, go, lang, transactions, eurRates, recipientNames, startY
   const recipientLabel = recipientNames.filter(Boolean).join(", ") || "—";
   const payload = { transactions, eur_rates: eurRates, recipient_name: recipientLabel, start_year: startYear, end_year: endYear, lang };
 
-  const handlePdf = async () => { setLoading("pdf"); triggerDownload(await downloadPdf(payload), `rapport_${period}.pdf`); setLoading(null); };
-  const handleCsv = async () => { setLoading("csv"); triggerDownload(await downloadCsv(payload), `transactions_${period}.csv`); setLoading(null); };
-  const handleJson = () => { triggerDownload(new Blob([JSON.stringify(transactions, null, 2)], { type: "application/json" }), "transactions.json"); };
+  const handlePdf = async () => {
+    setLoading("pdf");
+    try {
+      triggerDownload(await downloadPdf(payload), `rapport_${period}.pdf`);
+      onToast("ok", lang === "fr" ? "PDF téléchargé" : "PDF downloaded");
+    } catch {
+      onToast("error", lang === "fr" ? "Génération PDF échouée" : "PDF generation failed");
+    } finally { setLoading(null); }
+  };
+  const handleCsv = async () => {
+    setLoading("csv");
+    try {
+      triggerDownload(await downloadCsv(payload), `transactions_${period}.csv`);
+      onToast("ok", lang === "fr" ? "CSV téléchargé" : "CSV downloaded");
+    } catch {
+      onToast("error", lang === "fr" ? "Export CSV échoué" : "CSV export failed");
+    } finally { setLoading(null); }
+  };
+  const handleJson = () => {
+    triggerDownload(new Blob([JSON.stringify(transactions, null, 2)], { type: "application/json" }), "transactions.json");
+    onToast("info", "JSON téléchargé");
+  };
 
   const DLRow = ({ ext, name, onDl, primary = false }: { ext: string; name: string; onDl: () => void; primary?: boolean }) => (
     <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", background: primary ? A.ink : A.bg, color: primary ? A.bg : A.ink, border: "1px solid " + (primary ? A.ink : A.line), borderRadius: 10 }}>
@@ -736,6 +779,13 @@ export default function AtlasTheme() {
   const [formMeta, setFormMeta] = useState({ recipientNames: [] as string[], startYear: 2024, endYear: 2024 });
   const [extractStep, setExtractStep] = useState<string>("");
   const [extractMeta, setExtractMeta] = useState<Pick<ExtractionEvent, "found" | "current" | "total">>({});
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  const addToast = (kind: ToastKind, message: string) => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, kind, message }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4500);
+  };
 
   const T = I18N[lang];
 
@@ -762,6 +812,10 @@ export default function AtlasTheme() {
             setEurRates(event.eur_rates!);
             setSaved(event.saved!);
             setScreen("dashboard");
+            const n = event.transactions.length;
+            addToast("ok", lang === "fr"
+              ? `${n} transaction${n > 1 ? "s" : ""} extraite${n > 1 ? "s" : ""}`
+              : `${n} transaction${n > 1 ? "s" : ""} extracted`);
           }
           return;
         }
@@ -790,6 +844,7 @@ export default function AtlasTheme() {
         {screen === "dashboard" && (
           <Dashboard
             T={T} go={go} lang={lang} transactions={transactions} saved={saved}
+            onToast={addToast}
             onUpdate={async (key, patch) => {
               await updateTransaction(key, patch);
               setTransactions(prev => prev.map(t =>
@@ -802,9 +857,11 @@ export default function AtlasTheme() {
         )}
         {screen === "pdf" && (
           <ScreenPdf T={T} go={go} lang={lang} transactions={transactions} eurRates={eurRates}
-            recipientNames={formMeta.recipientNames} startYear={formMeta.startYear} endYear={formMeta.endYear} />
+            recipientNames={formMeta.recipientNames} startYear={formMeta.startYear} endYear={formMeta.endYear}
+            onToast={addToast} />
         )}
       </main>
+      <ToastStack toasts={toasts} onDismiss={id => setToasts(prev => prev.filter(t => t.id !== id))} />
     </div>
   );
 }
