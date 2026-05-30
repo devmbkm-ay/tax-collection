@@ -9,7 +9,7 @@ import ResultsPanel from "@/components/ResultsPanel";
 interface FormValues {
   email: string;
   password: string;
-  recipient_name: string;
+  recipient_names: string[];
   start_year: number;
   end_year: number;
   lang: "fr" | "en";
@@ -95,7 +95,7 @@ export default function Home() {
           {!loading && result && lastForm && (
             <ResultsPanel
               result={result}
-              recipientName={lastForm.recipient_name}
+              recipientName={lastForm.recipient_names.filter(Boolean).join(", ")}
               startYear={lastForm.start_year}
               endYear={lastForm.end_year}
               lang={lastForm.lang}

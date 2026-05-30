@@ -129,12 +129,52 @@ def _parse_text_fallback(text: str, subject: str) -> Dict:
     return result
 
 
+_NAME_BLACKLIST = frozenset({
+    'mobile', 'money', 'account', 'number', 'local', 'partner', 'added',
+    'collection', 'payment', 'service', 'your', 'our', 'their', 'the',
+    'bank', 'provider', 'card', 'wallet', 'transfer', 'sent', 'received',
+    'great', 'done', 'next', 'time', 'to', 'from', 'with',
+})
+
+
+def _is_likely_name(name: str) -> bool:
+    words = name.lower().split()
+    return len(words) >= 2 and not any(w in _NAME_BLACKLIST for w in words)
+
+
+def _extract_recipient_name(text: str, subject: str) -> str:
+    """
+    Extract the recipient's real name from WorldRemit email body or subject.
+    Patterns are case-sensitive — real names appear in Title Case in these emails.
+    Running with IGNORECASE would match generic phrases like 'their mobile money
+    account' and produce false positives such as 'Their Mobile Money Account'.
+    """
+    patterns = [
+        # "Patrick Kayombya has received your transfer" — most reliable ("All done" emails)
+        r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s+has\s+received\s+your',
+        # "Patrick Kayombya will receive your transfer" — ("We're on it" emails)
+        r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s+will\s+receive\s+your',
+        # "for you: Patrick Kayombya has received"
+        r'for\s+you[,:]?\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s+has',
+        # "Recipient: Patrick Kayombya" — explicit label
+        r'Recipient[:\s]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)',
+    ]
+    for src in (subject, text):
+        for pat in patterns:
+            m = re.search(pat, src)  # no IGNORECASE — enforces Title Case
+            if m:
+                name = m.group(1).strip()
+                if _is_likely_name(name):
+                    return name
+    return ""
+
+
 def parse_transaction(
     content: str,
     formatted_date: str,
     sort_key: str,
     subject: str,
-    recipient_name: str,
+    recipient_name: Optional[str],
     eur_rates: Dict[str, float],
 ) -> Optional[WorldRemitTransaction]:
     """
@@ -156,12 +196,14 @@ def parse_transaction(
         amount   = data.get('amount', 'N/A')
         currency = data.get('currency', 'UGX')
 
+        resolved_name = recipient_name or _extract_recipient_name(text, subject)
+
         return WorldRemitTransaction(
             date=formatted_date,
             amount=amount,
             currency=currency,
             amount_eur=to_eur(amount, currency, eur_rates) if amount != 'N/A' else 'N/A',
-            recipient_name=recipient_name,
+            recipient_name=resolved_name,
             transaction_number=data.get('transaction_number', 'N/A'),
             email_subject=subject,
             country=data.get('country') or CURRENCY_COUNTRY.get(currency, ''),

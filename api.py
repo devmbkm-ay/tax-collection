@@ -49,7 +49,8 @@ app.add_middleware(
 class ExtractRequest(BaseModel):
     email: str
     password: str
-    recipient_name: str
+    recipient_name: Optional[str] = None      # single name (legacy / optional)
+    recipient_names: Optional[List[str]] = None  # multiple names
     start_year: int
     end_year: int
     lang: str = "fr"
@@ -85,11 +86,17 @@ async def extract(req: ExtractRequest):
             detail="Connexion email échouée. Vérifiez vos identifiants et le mot de passe d'application.",
         )
 
+    # Build the list of names to search: prefer recipient_names, fall back to
+    # recipient_name (single), fall back to [None] (auto-detect from content)
+    names: List[Optional[str]] = req.recipient_names or (
+        [req.recipient_name] if req.recipient_name else [None]
+    )
+
     try:
         await loop.run_in_executor(
             None,
             extractor.process_emails,
-            req.recipient_name,
+            names,
             req.start_year,
             req.end_year,
         )
@@ -174,14 +181,25 @@ async def get_transactions(
     recipient_name: Optional[str] = None,
     start_year: Optional[int] = None,
     end_year: Optional[int] = None,
+    page: int = 1,
+    page_size: int = 20,
 ):
-    """Query persisted transactions with optional filters."""
-    txns = load_transactions(
+    """Query persisted transactions with optional filters and pagination."""
+    import math
+    txns, total = load_transactions(
         recipient_name=recipient_name,
         start_year=start_year,
         end_year=end_year,
+        page=page,
+        page_size=page_size,
     )
-    return {"transactions": [asdict(t) for t in txns]}
+    return {
+        "transactions": [asdict(t) for t in txns],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": math.ceil(total / page_size) if page_size else 1,
+    }
 
 
 @app.get("/api/stats")

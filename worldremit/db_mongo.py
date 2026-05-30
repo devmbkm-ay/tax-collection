@@ -64,7 +64,10 @@ def load_transactions(
     recipient_name: Optional[str] = None,
     start_year: Optional[int] = None,
     end_year: Optional[int] = None,
-) -> List[WorldRemitTransaction]:
+    page: int = 1,
+    page_size: int = 20,
+) -> tuple[List[WorldRemitTransaction], int]:
+    """Return (transactions, total_count) for the requested page."""
     coll = _collection()
     query: dict = {}
 
@@ -79,8 +82,14 @@ def load_transactions(
     if sort_key_filter:
         query["sort_key"] = sort_key_filter
 
-    docs = coll.find(query).sort("sort_key", ASCENDING)
-    return [
+    total = coll.count_documents(query)
+    docs = (
+        coll.find(query)
+        .sort("sort_key", ASCENDING)
+        .skip((page - 1) * page_size)
+        .limit(page_size)
+    )
+    txns = [
         WorldRemitTransaction(
             date=d["date"],
             amount=d["amount"],
@@ -94,6 +103,7 @@ def load_transactions(
         )
         for d in docs
     ]
+    return txns, total
 
 
 def get_stats() -> dict:

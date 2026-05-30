@@ -83,33 +83,39 @@ def load_transactions(
     recipient_name: Optional[str] = None,
     start_year: Optional[int] = None,
     end_year: Optional[int] = None,
-) -> List[WorldRemitTransaction]:
+    page: int = 1,
+    page_size: int = 20,
+) -> tuple[List[WorldRemitTransaction], int]:
     """
-    Load transactions from the database with optional filters.
-    Returns a list sorted by date ascending.
+    Load a page of transactions with optional filters.
+    Returns (transactions, total_count).
     """
     if not db_path.exists():
-        return []
+        return [], 0
 
-    query = "SELECT * FROM transactions WHERE 1=1"
+    where = "WHERE 1=1"
     params: list = []
 
     if recipient_name:
-        query += " AND recipient_name = ?"
+        where += " AND recipient_name = ?"
         params.append(recipient_name)
     if start_year:
-        query += " AND sort_key >= ?"
+        where += " AND sort_key >= ?"
         params.append(f"{start_year}-01-01")
     if end_year:
-        query += " AND sort_key <= ?"
+        where += " AND sort_key <= ?"
         params.append(f"{end_year}-12-31")
 
-    query += " ORDER BY sort_key ASC"
-
     with _connect(db_path) as conn:
-        rows = conn.execute(query, params).fetchall()
+        total = conn.execute(
+            f"SELECT COUNT(*) FROM transactions {where}", params
+        ).fetchone()[0]
+        rows = conn.execute(
+            f"SELECT * FROM transactions {where} ORDER BY sort_key ASC LIMIT ? OFFSET ?",
+            params + [page_size, (page - 1) * page_size],
+        ).fetchall()
 
-    return [
+    txns = [
         WorldRemitTransaction(
             date=row["date"],
             amount=row["amount"],
@@ -123,6 +129,7 @@ def load_transactions(
         )
         for row in rows
     ]
+    return txns, total
 
 
 def get_stats(db_path: Path = DEFAULT_DB) -> dict:

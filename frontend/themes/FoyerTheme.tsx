@@ -166,11 +166,15 @@ function Screen1({ T, go, lang, setLang }: { T: Translation; go: (s: string) => 
 // ── Email form ─────────────────────────────────────────────────────────────────
 function ScreenEmail({ T, go, lang, setLang, onExtract }: {
   T: Translation; go: (s: string) => void; lang: Lang; setLang: (l: Lang) => void;
-  onExtract: (v: { email: string; password: string; recipient_name: string; start_year: number; end_year: number }) => void;
+  onExtract: (v: { email: string; password: string; recipient_names: string[]; start_year: number; end_year: number }) => void;
 }) {
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
-  const [name, setName] = useState("");
+  const [names, setNames] = useState<string[]>([""]);
+
+  const setName = (i: number, v: string) => setNames(ns => ns.map((n, j) => j === i ? v : n));
+  const addName = () => setNames(ns => [...ns, ""]);
+  const removeName = (i: number) => setNames(ns => ns.length > 1 ? ns.filter((_, j) => j !== i) : [""]);
   const [startYear, setStartYear] = useState(String(new Date().getFullYear() - 1));
   const [endYear, setEndYear] = useState(String(new Date().getFullYear() - 1));
 
@@ -189,13 +193,28 @@ function ScreenEmail({ T, go, lang, setLang, onExtract }: {
           <div style={{ marginTop: 28, display: "flex", flexDirection: "column", gap: 16 }}>
             <Field label={T.email_label}><input value={email} onChange={(e) => setEmail(e.target.value)} style={inp} placeholder="vous@gmail.com" /></Field>
             <Field label={T.pw_label} hint={T.pw_hint}><input value={pw} onChange={(e) => setPw(e.target.value)} type="password" placeholder="xxxx xxxx xxxx xxxx" style={inp} /></Field>
-            <Field label={T.recipient_label}><input value={name} onChange={(e) => setName(e.target.value)} style={inp} placeholder="Patrick Kayombya" /></Field>
+            <Field label={T.recipient_label}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {names.map((n, i) => (
+                  <div key={i} style={{ display: "flex", gap: 6 }}>
+                    <input value={n} onChange={e => setName(i, e.target.value)} style={{ ...inp, flex: 1 }}
+                      placeholder={i === 0 ? (lang === "fr" ? "Optionnel — détecté automatiquement" : "Optional — auto-detected") : (lang === "fr" ? "Autre bénéficiaire" : "Another recipient")} />
+                    {names.length > 1 && (
+                      <button onClick={() => removeName(i)} style={{ background: "none", border: "1.5px solid " + F.line, borderRadius: 10, padding: "0 10px", cursor: "pointer", color: F.muted, fontSize: 14 }}>×</button>
+                    )}
+                  </div>
+                ))}
+                <button onClick={addName} style={{ background: "none", border: "none", color: F.coral, fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0, textAlign: "left" }}>
+                  + {lang === "fr" ? "Ajouter un bénéficiaire" : "Add a recipient"}
+                </button>
+              </div>
+            </Field>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <Field label={lang === "fr" ? "De" : "From"}><input value={startYear} onChange={(e) => setStartYear(e.target.value)} style={inp} /></Field>
               <Field label={lang === "fr" ? "À" : "To"}><input value={endYear} onChange={(e) => setEndYear(e.target.value)} style={inp} /></Field>
             </div>
             <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
-              <Btn onClick={() => onExtract({ email, password: pw, recipient_name: name, start_year: Number(startYear), end_year: Number(endYear) })}>{T.cta_connect} →</Btn>
+              <Btn onClick={() => onExtract({ email, password: pw, recipient_names: names.map(n => n.trim()), start_year: Number(startYear), end_year: Number(endYear) })}>{T.cta_connect} →</Btn>
               <Btn kind="ghost" onClick={() => go("start")}>{T.cta_back}</Btn>
             </div>
           </div>
@@ -238,14 +257,20 @@ function ScreenLoading({ T, lang, setLang }: { T: Translation; lang: Lang; setLa
 }
 
 // ── Dashboard ──────────────────────────────────────────────────────────────────
+const F_PAGE_SIZE = 20;
+
 function Dashboard({ T, go, lang, setLang, transactions, saved }: {
   T: Translation; go: (s: string) => void; lang: Lang; setLang: (l: Lang) => void;
   transactions: Transaction[]; saved: number;
 }) {
+  const [txPage, setTxPage] = useState(1);
   const s = summarize(transactions);
   const countries = Object.entries(s.byCountry).sort((a, b) => b[1] - a[1]);
   const recipients = Object.entries(s.byRecipient).sort((a, b) => b[1] - a[1]);
   const td: React.CSSProperties = { padding: "10px 14px", color: F.ink, fontSize: 12, verticalAlign: "middle" };
+  const sorted = transactions.slice().sort((a, b) => a.sort_key.localeCompare(b.sort_key));
+  const totalPages = Math.ceil(sorted.length / F_PAGE_SIZE);
+  const pageRows = sorted.slice((txPage - 1) * F_PAGE_SIZE, txPage * F_PAGE_SIZE);
 
   return (
     <div style={{ padding: "32px 48px 32px", display: "flex", flexDirection: "column", gap: 20, height: "100%", overflow: "auto" }}>
@@ -318,8 +343,8 @@ function Dashboard({ T, go, lang, setLang, transactions, saved }: {
               </tr>
             </thead>
             <tbody>
-              {transactions.slice().sort((a, b) => a.sort_key.localeCompare(b.sort_key)).map((t, i) => (
-                <tr key={`${t.sort_key}-${i}`} style={{ borderTop: "1px solid " + F.line }}>
+              {pageRows.map((t, i) => (
+                <tr key={`${t.sort_key}-${t.amount}-${t.currency}-${i}`} style={{ borderTop: "1px solid " + F.line }}>
                   <td style={td}>{t.date}</td>
                   <td style={td}>{t.recipient_name}</td>
                   <td style={td}><span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><Flag code={COUNTRY_CODE[t.country]} size={18} />{t.country}</span></td>
@@ -331,21 +356,35 @@ function Dashboard({ T, go, lang, setLang, transactions, saved }: {
             </tbody>
           </table>
         </div>
+        {totalPages > 1 && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 12, marginTop: 14, fontSize: 12, color: F.muted }}>
+            <button onClick={() => setTxPage(p => Math.max(1, p - 1))} disabled={txPage === 1}
+              style={{ background: txPage === 1 ? F.cream : F.peach, border: "none", borderRadius: 99, width: 32, height: 32, cursor: txPage === 1 ? "default" : "pointer", color: txPage === 1 ? F.muted : F.ink, fontWeight: 700, fontSize: 14, display: "grid", placeItems: "center" }}>
+              ←
+            </button>
+            <span>{txPage} / {totalPages}</span>
+            <button onClick={() => setTxPage(p => Math.min(totalPages, p + 1))} disabled={txPage === totalPages}
+              style={{ background: txPage === totalPages ? F.cream : F.peach, border: "none", borderRadius: 99, width: 32, height: 32, cursor: txPage === totalPages ? "default" : "pointer", color: txPage === totalPages ? F.muted : F.ink, fontWeight: 700, fontSize: 14, display: "grid", placeItems: "center" }}>
+              →
+            </button>
+          </div>
+        )}
       </Card>
     </div>
   );
 }
 
 // ── PDF ────────────────────────────────────────────────────────────────────────
-function ScreenPdf({ T, go, lang, setLang, transactions, eurRates, recipientName, startYear, endYear }: {
+function ScreenPdf({ T, go, lang, setLang, transactions, eurRates, recipientNames, startYear, endYear }: {
   T: Translation; go: (s: string) => void; lang: Lang; setLang: (l: Lang) => void;
   transactions: Transaction[]; eurRates: Record<string, number>;
-  recipientName: string; startYear: number; endYear: number;
+  recipientNames: string[]; startYear: number; endYear: number;
 }) {
   const s = summarize(transactions);
   const [loading, setLoading] = useState<string | null>(null);
   const period = startYear === endYear ? String(startYear) : `${startYear}–${endYear}`;
-  const payload = { transactions, eur_rates: eurRates, recipient_name: recipientName, start_year: startYear, end_year: endYear, lang };
+  const recipientLabel = recipientNames.filter(Boolean).join(", ") || "—";
+  const payload = { transactions, eur_rates: eurRates, recipient_name: recipientLabel, start_year: startYear, end_year: endYear, lang };
 
   const Row = ({ k, v, strong }: { k: string; v: string | number; strong?: boolean }) => (
     <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid " + F.cream, fontSize: 12 }}>
@@ -372,7 +411,7 @@ function ScreenPdf({ T, go, lang, setLang, transactions, eurRates, recipientName
             {lang === "fr" ? "Rapport de transferts internationaux" : "International transfers report"}
           </h3>
           <div style={{ borderTop: "1px solid " + F.line, paddingTop: 10 }}>
-            <Row k={lang === "fr" ? "Bénéficiaire" : "Recipient"} v={recipientName} />
+            <Row k={lang === "fr" ? "Bénéficiaire" : "Recipient"} v={recipientLabel} />
             <Row k={lang === "fr" ? "Période" : "Period"} v={period} />
             <Row k={T.transfers} v={s.count} />
             <Row k={T.total_eur} v={formatEUR(s.totalEur)} strong />
@@ -412,13 +451,13 @@ export default function FoyerTheme() {
   const [eurRates, setEurRates] = useState<Record<string, number>>({});
   const [saved, setSaved] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [formMeta, setFormMeta] = useState({ recipientName: "", startYear: 2024, endYear: 2024 });
+  const [formMeta, setFormMeta] = useState({ recipientNames: [] as string[], startYear: 2024, endYear: 2024 });
 
   const T = I18N[lang];
   const go = (s: string) => { setError(null); setScreen(s); };
 
-  const handleExtract = async (vals: { email: string; password: string; recipient_name: string; start_year: number; end_year: number }) => {
-    setFormMeta({ recipientName: vals.recipient_name, startYear: vals.start_year, endYear: vals.end_year });
+  const handleExtract = async (vals: { email: string; password: string; recipient_names: string[]; start_year: number; end_year: number }) => {
+    setFormMeta({ recipientNames: vals.recipient_names, startYear: vals.start_year, endYear: vals.end_year });
     setScreen("loading");
     try {
       const data: ExtractResponse = await extractTransactions({ ...vals, lang });
@@ -439,7 +478,7 @@ export default function FoyerTheme() {
       {screen === "email" && <ScreenEmail T={T} go={go} lang={lang} setLang={setLang} onExtract={handleExtract} />}
       {screen === "loading" && <ScreenLoading T={T} lang={lang} setLang={setLang} />}
       {screen === "dashboard" && <Dashboard T={T} go={go} lang={lang} setLang={setLang} transactions={transactions} saved={saved} />}
-      {screen === "pdf" && <ScreenPdf T={T} go={go} lang={lang} setLang={setLang} transactions={transactions} eurRates={eurRates} recipientName={formMeta.recipientName} startYear={formMeta.startYear} endYear={formMeta.endYear} />}
+      {screen === "pdf" && <ScreenPdf T={T} go={go} lang={lang} setLang={setLang} transactions={transactions} eurRates={eurRates} recipientNames={formMeta.recipientNames} startYear={formMeta.startYear} endYear={formMeta.endYear} />}
     </div>
   );
 }

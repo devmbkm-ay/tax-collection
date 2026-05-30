@@ -105,12 +105,14 @@ class EmailClient:
     # Search & fetch
     # ------------------------------------------------------------------
 
-    def search(self, recipient_name: str, start_year: int, end_year: int) -> List[bytes]:
-        """Return IMAP message IDs matching the WorldRemit + recipient + date criteria."""
+    def search(self, recipient_name: Optional[str], start_year: int, end_year: int) -> List[bytes]:
+        """Return IMAP message IDs matching the WorldRemit + date criteria.
+        When recipient_name is provided it is added as a BODY filter for speed."""
         try:
             self._imap.select('INBOX')
+            body_filter = f'BODY "{recipient_name}" ' if recipient_name else ''
             criteria = (
-                f'(FROM "worldremit" BODY "{recipient_name}" '
+                f'(FROM "worldremit" {body_filter}'
                 f'SINCE "01-Jan-{start_year}" BEFORE "01-Jan-{end_year + 1}")'
             )
             print(f"Searching: {criteria}")
@@ -141,23 +143,31 @@ class EmailClient:
 
     def fetch_transactions(
         self,
-        recipient_name: str,
+        recipient_names: List[Optional[str]],
         start_year: int,
         end_year: int,
         eur_rates: dict,
     ) -> List[WorldRemitTransaction]:
         """
-        Search, fetch and deduplicate all WorldRemit transactions
-        for the given recipient and year range.
+        Search, fetch and deduplicate all WorldRemit transactions for one or
+        more recipients. Runs a separate IMAP search per name and merges results.
         """
-        ids = self.search(recipient_name, start_year, end_year)
-        if not ids:
+        # Collect unique email IDs across all recipient queries
+        all_ids: List[bytes] = []
+        seen_ids: set = set()
+        for name in recipient_names:
+            for eid in self.search(name, start_year, end_year):
+                if eid not in seen_ids:
+                    seen_ids.add(eid)
+                    all_ids.append(eid)
+
+        if not all_ids:
             return []
 
         transactions: List[WorldRemitTransaction] = []
-        print(f"Processing {len(ids)} emails...")
+        print(f"Processing {len(all_ids)} emails...")
 
-        for i, email_id in enumerate(ids):
+        for i, email_id in enumerate(all_ids):
             msg = self.fetch_message(email_id)
             if not msg:
                 continue
@@ -172,16 +182,17 @@ class EmailClient:
             except Exception:
                 formatted_date, sort_key = raw_date, raw_date
 
+            # Pass None so the parser auto-detects the name from content
             txn = parse_transaction(
                 _get_body(msg), formatted_date, sort_key,
-                subject, recipient_name, eur_rates,
+                subject, None, eur_rates,
             )
             if txn:
                 _upsert(transactions, txn)
                 print(
-                    f"  [{i+1}/{len(ids)}] {formatted_date} | "
+                    f"  [{i+1}/{len(all_ids)}] {formatted_date} | "
                     f"{txn.amount} {txn.currency} (≈{txn.amount_eur} EUR) | "
-                    f"TXN: {txn.transaction_number}"
+                    f"{txn.recipient_name} | TXN: {txn.transaction_number}"
                 )
 
         print(f"\n{len(transactions)} unique transactions extracted.")

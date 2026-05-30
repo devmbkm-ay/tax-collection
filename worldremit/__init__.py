@@ -5,7 +5,7 @@ Usage:
     from worldremit import WorldRemitExtractor
 """
 
-from typing import Dict, List
+from typing import Dict, List, Optional, Union
 
 from .email_client import EmailClient
 from .exchange import fetch_eur_rates
@@ -37,11 +37,16 @@ class WorldRemitExtractor:
 
     # ── Processing ─────────────────────────────────────────────────────
 
-    def process_emails(self, recipient_name: str, start_year: int, end_year: int) -> None:
+    def process_emails(
+        self,
+        recipient_names: List[Optional[str]],
+        start_year: int,
+        end_year: int,
+    ) -> None:
         print("Fetching EUR exchange rates...")
         self.eur_rates = fetch_eur_rates()
         self.transactions = self._client.fetch_transactions(
-            recipient_name, start_year, end_year, self.eur_rates
+            recipient_names, start_year, end_year, self.eur_rates
         )
 
     # ── Output ─────────────────────────────────────────────────────────

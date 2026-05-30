@@ -234,17 +234,21 @@ function SourceCard({ num, tag, title, desc, onClick, primary = false }: {
 // ── Email form ────────────────────────────────────────────────────────────────
 function ScreenEmail({ T, go, lang, onExtract }: {
   T: Translation; go: (s: string) => void; lang: Lang;
-  onExtract: (vals: { email: string; password: string; recipient_name: string; start_year: number; end_year: number }) => void;
+  onExtract: (vals: { email: string; password: string; recipient_names: string[]; start_year: number; end_year: number }) => void;
 }) {
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
-  const [recipient, setRecipient] = useState("");
+  const [recipients, setRecipients] = useState<string[]>([""]);
   const [startYear, setStartYear] = useState(String(new Date().getFullYear() - 1));
   const [endYear, setEndYear] = useState(String(new Date().getFullYear() - 1));
 
+  const setRecipient = (i: number, v: string) => setRecipients(rs => rs.map((r, j) => j === i ? v : r));
+  const addRecipient = () => setRecipients(rs => [...rs, ""]);
+  const removeRecipient = (i: number) => setRecipients(rs => rs.length > 1 ? rs.filter((_, j) => j !== i) : [""]);
+
   const submit = () => {
-    if (!email || !pw || !recipient) return;
-    onExtract({ email, password: pw, recipient_name: recipient, start_year: Number(startYear), end_year: Number(endYear) });
+    if (!email || !pw) return;
+    onExtract({ email, password: pw, recipient_names: recipients.map(r => r.trim()), start_year: Number(startYear), end_year: Number(endYear) });
   };
 
   return (
@@ -263,7 +267,22 @@ function ScreenEmail({ T, go, lang, onExtract }: {
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <AInput label={T.email_label} value={email} onChange={setEmail} placeholder="vous@gmail.com" />
             <AInput label={T.pw_label} value={pw} onChange={setPw} type="password" placeholder="xxxx xxxx xxxx xxxx" hint={T.pw_hint} />
-            <AInput label={T.recipient_label} value={recipient} onChange={setRecipient} placeholder="Patrick Kayombya" />
+            <div>
+              <div style={{ fontFamily: MONO, fontSize: 10, color: A.muted, letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>{T.recipient_label}</div>
+              {recipients.map((r, i) => (
+                <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                  <input value={r} onChange={e => setRecipient(i, e.target.value)}
+                    placeholder={i === 0 ? (lang === "fr" ? "Optionnel — détecté automatiquement" : "Optional — auto-detected") : (lang === "fr" ? "Autre bénéficiaire" : "Another recipient")}
+                    style={{ flex: 1, background: A.bg, border: "1px solid " + A.line, borderRadius: 8, padding: "8px 10px", fontFamily: SANS, fontSize: 13, color: A.ink, outline: "none" }} />
+                  {recipients.length > 1 && (
+                    <button onClick={() => removeRecipient(i)} style={{ background: "none", border: "1px solid " + A.line, borderRadius: 8, padding: "0 10px", cursor: "pointer", color: A.muted, fontFamily: MONO, fontSize: 14 }}>×</button>
+                  )}
+                </div>
+              ))}
+              <button onClick={addRecipient} style={{ background: "none", border: "none", color: A.accent, fontFamily: MONO, fontSize: 11, cursor: "pointer", padding: 0, letterSpacing: 0.5 }}>
+                + {lang === "fr" ? "Ajouter un bénéficiaire" : "Add a recipient"}
+              </button>
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <AInput label={lang === "fr" ? "De" : "From"} value={startYear} onChange={setStartYear} />
               <AInput label={lang === "fr" ? "À" : "To"} value={endYear} onChange={setEndYear} />
@@ -333,14 +352,20 @@ function ScreenError({ message, onBack }: { message: string; onBack: () => void 
 }
 
 // ── Dashboard ──────────────────────────────────────────────────────────────────
+const A_PAGE_SIZE = 20;
+
 function Dashboard({ T, go, lang, transactions, saved }: {
   T: Translation; go: (s: string) => void; lang: Lang;
   transactions: Transaction[]; saved: number;
 }) {
+  const [txPage, setTxPage] = useState(1);
   const s = summarize(transactions);
   const countries = Object.entries(s.byCountry).sort((a, b) => b[1] - a[1]);
   const recipients = Object.entries(s.byRecipient).sort((a, b) => b[1] - a[1]);
   const atd: React.CSSProperties = { padding: "11px 10px", color: A.ink, verticalAlign: "middle" };
+  const sorted = transactions.slice().sort((a, b) => a.sort_key.localeCompare(b.sort_key));
+  const totalPages = Math.ceil(sorted.length / A_PAGE_SIZE);
+  const pageRows = sorted.slice((txPage - 1) * A_PAGE_SIZE, txPage * A_PAGE_SIZE);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
@@ -410,8 +435,8 @@ function Dashboard({ T, go, lang, transactions, saved }: {
                 </tr>
               </thead>
               <tbody>
-                {transactions.slice().sort((a, b) => a.sort_key.localeCompare(b.sort_key)).map((t, i) => (
-                  <tr key={`${t.sort_key}-${i}`} style={{ borderBottom: "1px solid " + A.lineSoft }}>
+                {pageRows.map((t, i) => (
+                  <tr key={`${t.sort_key}-${t.amount}-${t.currency}-${i}`} style={{ borderBottom: "1px solid " + A.lineSoft }}>
                     <td style={atd}>{t.date}</td>
                     <td style={{ ...atd, fontWeight: 600 }}>{t.recipient_name}</td>
                     <td style={atd}><span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><Flag code={COUNTRY_CODE[t.country]} size={16} />{t.country}</span></td>
@@ -423,6 +448,19 @@ function Dashboard({ T, go, lang, transactions, saved }: {
               </tbody>
             </table>
           </div>
+          {totalPages > 1 && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 12, marginTop: 14, fontFamily: MONO, fontSize: 12 }}>
+              <button onClick={() => setTxPage(p => Math.max(1, p - 1))} disabled={txPage === 1}
+                style={{ background: "none", border: "1px solid " + A.line, borderRadius: 6, padding: "5px 12px", cursor: txPage === 1 ? "default" : "pointer", color: txPage === 1 ? A.muted : A.ink, fontFamily: MONO, fontSize: 12 }}>
+                ←
+              </button>
+              <span style={{ color: A.muted }}>{txPage} / {totalPages}</span>
+              <button onClick={() => setTxPage(p => Math.min(totalPages, p + 1))} disabled={txPage === totalPages}
+                style={{ background: "none", border: "1px solid " + A.line, borderRadius: 6, padding: "5px 12px", cursor: txPage === totalPages ? "default" : "pointer", color: txPage === totalPages ? A.muted : A.ink, fontFamily: MONO, fontSize: 12 }}>
+                →
+              </button>
+            </div>
+          )}
         </APanel>
       </div>
     </div>
@@ -443,15 +481,16 @@ function Kpi({ label, value, accent = false }: { label: string; value: string; a
 }
 
 // ── PDF / Downloads ────────────────────────────────────────────────────────────
-function ScreenPdf({ T, go, lang, transactions, eurRates, recipientName, startYear, endYear }: {
+function ScreenPdf({ T, go, lang, transactions, eurRates, recipientNames, startYear, endYear }: {
   T: Translation; go: (s: string) => void; lang: Lang;
   transactions: Transaction[]; eurRates: Record<string, number>;
-  recipientName: string; startYear: number; endYear: number;
+  recipientNames: string[]; startYear: number; endYear: number;
 }) {
   const s = summarize(transactions);
   const [loading, setLoading] = useState<string | null>(null);
   const period = startYear === endYear ? String(startYear) : `${startYear}–${endYear}`;
-  const payload = { transactions, eur_rates: eurRates, recipient_name: recipientName, start_year: startYear, end_year: endYear, lang };
+  const recipientLabel = recipientNames.filter(Boolean).join(", ") || "—";
+  const payload = { transactions, eur_rates: eurRates, recipient_name: recipientLabel, start_year: startYear, end_year: endYear, lang };
 
   const handlePdf = async () => { setLoading("pdf"); triggerDownload(await downloadPdf(payload), `rapport_${period}.pdf`); setLoading(null); };
   const handleCsv = async () => { setLoading("csv"); triggerDownload(await downloadCsv(payload), `transactions_${period}.csv`); setLoading(null); };
@@ -480,7 +519,7 @@ function ScreenPdf({ T, go, lang, transactions, eurRates, recipientName, startYe
           </div>
           <div style={{ marginTop: 14 }}>
             {[
-              [lang === "fr" ? "Bénéficiaire" : "Recipient", recipientName],
+              [lang === "fr" ? "Bénéficiaire" : "Recipient", recipientLabel],
               [lang === "fr" ? "Période" : "Period", period],
               [T.transfers, s.count],
               [T.total_eur, formatEURp(s.totalEur)],
@@ -515,14 +554,14 @@ export default function AtlasTheme() {
   const [eurRates, setEurRates] = useState<Record<string, number>>({});
   const [saved, setSaved] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [formMeta, setFormMeta] = useState({ recipientName: "", startYear: 2024, endYear: 2024 });
+  const [formMeta, setFormMeta] = useState({ recipientNames: [] as string[], startYear: 2024, endYear: 2024 });
 
   const T = I18N[lang];
 
   const go = (s: string) => { setError(null); setScreen(s); };
 
-  const handleExtract = async (vals: { email: string; password: string; recipient_name: string; start_year: number; end_year: number }) => {
-    setFormMeta({ recipientName: vals.recipient_name, startYear: vals.start_year, endYear: vals.end_year });
+  const handleExtract = async (vals: { email: string; password: string; recipient_names: string[]; start_year: number; end_year: number }) => {
+    setFormMeta({ recipientNames: vals.recipient_names, startYear: vals.start_year, endYear: vals.end_year });
     setScreen("loading");
     try {
       const data: ExtractResponse = await extractTransactions({ ...vals, lang });
@@ -556,7 +595,7 @@ export default function AtlasTheme() {
         {screen === "dashboard" && <Dashboard T={T} go={go} lang={lang} transactions={transactions} saved={saved} />}
         {screen === "pdf" && (
           <ScreenPdf T={T} go={go} lang={lang} transactions={transactions} eurRates={eurRates}
-            recipientName={formMeta.recipientName} startYear={formMeta.startYear} endYear={formMeta.endYear} />
+            recipientNames={formMeta.recipientNames} startYear={formMeta.startYear} endYear={formMeta.endYear} />
         )}
       </main>
     </div>
