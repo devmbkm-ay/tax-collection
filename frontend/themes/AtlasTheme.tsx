@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { extractTransactions, downloadPdf, downloadCsv, triggerDownload } from "@/lib/api";
 import type { Transaction, ExtractResponse } from "@/lib/types";
-import { type Translation,
+import {
+  type Translation,
   summarize, formatEUR, formatEURp, formatAmount,
   COUNTRY_CODE, I18N, type Lang,
 } from "@/lib/theme-utils";
@@ -17,8 +18,8 @@ const A = {
   good: "#3F7A4F", warn: "#C58A1F",
 };
 const DISPLAY = `'Bricolage Grotesque','Plus Jakarta Sans',system-ui,sans-serif`;
-const SANS    = `'Plus Jakarta Sans',ui-sans-serif,system-ui,sans-serif`;
-const MONO    = `'JetBrains Mono',ui-monospace,monospace`;
+const SANS = `'Plus Jakarta Sans',ui-sans-serif,system-ui,sans-serif`;
+const MONO = `'JetBrains Mono',ui-monospace,monospace`;
 
 // ── Tiny atoms ───────────────────────────────────────────────────────────────
 const Dot = ({ color = A.accent }: { color?: string }) => (
@@ -41,9 +42,9 @@ const Btn = ({ children, onClick, kind = "primary", size = "md", style = {}, dis
 }) => {
   const s: Record<string, React.CSSProperties> = {
     primary: { background: A.ink, color: A.bg, border: "1px solid " + A.ink },
-    accent:  { background: A.accent, color: "#fff", border: "1px solid " + A.accent },
-    ghost:   { background: "transparent", color: A.ink, border: "1px solid " + A.line },
-    soft:    { background: A.surface2, color: A.ink, border: "1px solid " + A.line },
+    accent: { background: A.accent, color: "#fff", border: "1px solid " + A.accent },
+    ghost: { background: "transparent", color: A.ink, border: "1px solid " + A.line },
+    soft: { background: A.surface2, color: A.ink, border: "1px solid " + A.line },
   };
   return (
     <button onClick={onClick} disabled={disabled} style={{
@@ -195,8 +196,8 @@ function ScreenStart({ T, go, lang }: { T: Translation; go: (s: string) => void;
       <div style={{ padding: "28px 40px 32px", display: "flex", flexDirection: "column", gap: 22, flex: 1 }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
           <SourceCard num="01" tag="IMAP" title={T.method_email} desc={T.method_email_d} onClick={() => go("email")} primary />
-          <SourceCard num="02" tag="JSON" title={T.method_json} desc={T.method_json_d} onClick={() => {}} />
-          <SourceCard num="03" tag=".EML" title={T.method_eml} desc={T.method_eml_d} onClick={() => {}} />
+          <SourceCard num="02" tag="JSON" title={T.method_json} desc={T.method_json_d} onClick={() => { }} />
+          <SourceCard num="03" tag=".EML" title={T.method_eml} desc={T.method_eml_d} onClick={() => { }} />
         </div>
       </div>
     </div>
@@ -410,7 +411,7 @@ function Dashboard({ T, go, lang, transactions, saved }: {
               </thead>
               <tbody>
                 {transactions.slice().sort((a, b) => a.sort_key.localeCompare(b.sort_key)).map((t, i) => (
-                  <tr key={t.sort_key + t.amount + t.currency + i} style={{ borderBottom: "1px solid " + A.lineSoft }}>
+                  <tr key={`${t.sort_key}-${i}`} style={{ borderBottom: "1px solid " + A.lineSoft }}>
                     <td style={atd}>{t.date}</td>
                     <td style={{ ...atd, fontWeight: 600 }}>{t.recipient_name}</td>
                     <td style={atd}><span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><Flag code={COUNTRY_CODE[t.country]} size={16} />{t.country}</span></td>
@@ -544,16 +545,16 @@ export default function AtlasTheme() {
     <div style={{ background: A.bg, color: A.ink, fontFamily: SANS, height: "100vh", width: "100%", display: "flex", overflow: "hidden" }}>
       <Sidebar screen={screen} go={go} lang={lang} setLang={setLang} />
       <main style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: A.bg }}>
-        {screen === "start"     && <ScreenStart T={T} go={go} lang={lang} />}
-        {screen === "email"     && (
+        {screen === "start" && <ScreenStart T={T} go={go} lang={lang} />}
+        {screen === "email" && (
           <>
             {error && <div style={{ background: "#fee", borderBottom: "1px solid #fcc", padding: "10px 40px", fontSize: 13, color: "#c00" }}>⚠️ {error}</div>}
             <ScreenEmail T={T} go={go} lang={lang} onExtract={handleExtract} />
           </>
         )}
-        {screen === "loading"   && <ScreenLoading T={T} />}
+        {screen === "loading" && <ScreenLoading T={T} />}
         {screen === "dashboard" && <Dashboard T={T} go={go} lang={lang} transactions={transactions} saved={saved} />}
-        {screen === "pdf"       && (
+        {screen === "pdf" && (
           <ScreenPdf T={T} go={go} lang={lang} transactions={transactions} eurRates={eurRates}
             recipientName={formMeta.recipientName} startYear={formMeta.startYear} endYear={formMeta.endYear} />
         )}

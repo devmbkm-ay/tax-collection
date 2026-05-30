@@ -12,7 +12,7 @@ const F = {
   ink: "#2A2520", muted: "#7B6F62", line: "#EADDC8", sun: "#E8B958",
 };
 const FONT = `'Plus Jakarta Sans',ui-sans-serif,system-ui,sans-serif`;
-const NUM  = `'Plus Jakarta Sans',ui-sans-serif,system-ui,sans-serif`;
+const NUM = `'Plus Jakarta Sans',ui-sans-serif,system-ui,sans-serif`;
 
 // ── atoms ─────────────────────────────────────────────────────────────────────
 const Pill = ({ children, color = F.peach, fg = F.ink }: { children: React.ReactNode; color?: string; fg?: string }) => (
@@ -25,8 +25,8 @@ const Btn = ({ children, onClick, kind = "primary", style = {}, disabled = false
 }) => {
   const s: Record<string, React.CSSProperties> = {
     primary: { background: F.coral, color: "#FFF8F2", border: "1.5px solid " + F.coral },
-    ghost:   { background: "transparent", color: F.ink, border: "1.5px solid " + F.line },
-    soft:    { background: F.cream, color: F.ink, border: "1.5px solid " + F.line },
+    ghost: { background: "transparent", color: F.ink, border: "1.5px solid " + F.line },
+    soft: { background: F.cream, color: F.ink, border: "1.5px solid " + F.line },
   };
   return (
     <button onClick={onClick} disabled={disabled} style={{
@@ -119,8 +119,8 @@ function Screen1({ T, go, lang, setLang }: { T: Translation; go: (s: string) => 
       border: "1.5px solid " + F.line, background: F.card, cursor: "pointer",
       fontFamily: FONT, display: "flex", flexDirection: "column", gap: 14,
     }}
-    onMouseEnter={(e) => { e.currentTarget.style.borderColor = F.peachDeep; e.currentTarget.style.transform = "translateY(-2px)"; }}
-    onMouseLeave={(e) => { e.currentTarget.style.borderColor = F.line; e.currentTarget.style.transform = "translateY(0)"; }}>
+      onMouseEnter={(e) => { e.currentTarget.style.borderColor = F.peachDeep; e.currentTarget.style.transform = "translateY(-2px)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.borderColor = F.line; e.currentTarget.style.transform = "translateY(0)"; }}>
       <div style={{ width: 52, height: 52, borderRadius: 16, background: accent, display: "grid", placeItems: "center", color: "#fff", fontSize: 24 }}>{icon}</div>
       <div>
         <div style={{ fontSize: 17, fontWeight: 700, color: F.ink, marginBottom: 6 }}>{title}</div>
@@ -156,8 +156,8 @@ function Screen1({ T, go, lang, setLang }: { T: Translation; go: (s: string) => 
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18 }}>
         <SourceCard accent={F.peachDeep} icon="@" title={T.method_email} desc={T.method_email_d} onClick={() => go("email")} />
-        <SourceCard accent={F.sage} icon="{ }" title={T.method_json} desc={T.method_json_d} onClick={() => {}} />
-        <SourceCard accent={F.sun} icon="✉" title={T.method_eml} desc={T.method_eml_d} onClick={() => {}} />
+        <SourceCard accent={F.sage} icon="{ }" title={T.method_json} desc={T.method_json_d} onClick={() => { }} />
+        <SourceCard accent={F.sun} icon="✉" title={T.method_eml} desc={T.method_eml_d} onClick={() => { }} />
       </div>
     </div>
   );
@@ -318,8 +318,8 @@ function Dashboard({ T, go, lang, setLang, transactions, saved }: {
               </tr>
             </thead>
             <tbody>
-              {transactions.slice().sort((a, b) => a.sort_key.localeCompare(b.sort_key)).map((t) => (
-                <tr key={t.transaction_number + t.sort_key} style={{ borderTop: "1px solid " + F.line }}>
+              {transactions.slice().sort((a, b) => a.sort_key.localeCompare(b.sort_key)).map((t, i) => (
+                <tr key={`${t.sort_key}-${i}`} style={{ borderTop: "1px solid " + F.line }}>
                   <td style={td}>{t.date}</td>
                   <td style={td}>{t.recipient_name}</td>
                   <td style={td}><span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><Flag code={COUNTRY_CODE[t.country]} size={18} />{t.country}</span></td>
@@ -435,11 +435,11 @@ export default function FoyerTheme() {
   return (
     <div style={{ background: F.bg, color: F.ink, fontFamily: FONT, height: "100vh", width: "100%", overflow: "hidden", position: "relative" }}>
       {error && <div style={{ background: "#fee", borderBottom: "1px solid #fcc", padding: "10px 56px", fontSize: 13, color: "#c00" }}>⚠️ {error}</div>}
-      {screen === "start"     && <Screen1 T={T} go={go} lang={lang} setLang={setLang} />}
-      {screen === "email"     && <ScreenEmail T={T} go={go} lang={lang} setLang={setLang} onExtract={handleExtract} />}
-      {screen === "loading"   && <ScreenLoading T={T} lang={lang} setLang={setLang} />}
+      {screen === "start" && <Screen1 T={T} go={go} lang={lang} setLang={setLang} />}
+      {screen === "email" && <ScreenEmail T={T} go={go} lang={lang} setLang={setLang} onExtract={handleExtract} />}
+      {screen === "loading" && <ScreenLoading T={T} lang={lang} setLang={setLang} />}
       {screen === "dashboard" && <Dashboard T={T} go={go} lang={lang} setLang={setLang} transactions={transactions} saved={saved} />}
-      {screen === "pdf"       && <ScreenPdf T={T} go={go} lang={lang} setLang={setLang} transactions={transactions} eurRates={eurRates} recipientName={formMeta.recipientName} startYear={formMeta.startYear} endYear={formMeta.endYear} />}
+      {screen === "pdf" && <ScreenPdf T={T} go={go} lang={lang} setLang={setLang} transactions={transactions} eurRates={eurRates} recipientName={formMeta.recipientName} startYear={formMeta.startYear} endYear={formMeta.endYear} />}
     </div>
   );
 }

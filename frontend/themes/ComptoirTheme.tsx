@@ -12,8 +12,8 @@ const C = {
   rule: "#D6C5A4", softrule: "#E7D9B8",
 };
 const SERIF = `'Instrument Serif','Source Serif Pro',Georgia,serif`;
-const SANS  = `'Public Sans',ui-sans-serif,system-ui,-apple-system,sans-serif`;
-const MONO  = `'DM Mono','JetBrains Mono',ui-monospace,monospace`;
+const SANS = `'Public Sans',ui-sans-serif,system-ui,-apple-system,sans-serif`;
+const MONO = `'DM Mono','JetBrains Mono',ui-monospace,monospace`;
 
 // ── atoms ─────────────────────────────────────────────────────────────────────
 const Btn = ({ children, onClick, kind = "primary", style = {}, disabled = false }: {
@@ -22,8 +22,8 @@ const Btn = ({ children, onClick, kind = "primary", style = {}, disabled = false
 }) => {
   const s: Record<string, React.CSSProperties> = {
     primary: { background: C.ink, color: C.bg, border: "1px solid " + C.ink },
-    ghost:   { background: "transparent", color: C.ink, border: "1px solid " + C.rule },
-    ochre:   { background: C.ochre, color: C.ink, border: "1px solid " + C.ochre },
+    ghost: { background: "transparent", color: C.ink, border: "1px solid " + C.rule },
+    ochre: { background: C.ochre, color: C.ink, border: "1px solid " + C.ochre },
   };
   return (
     <button onClick={onClick} disabled={disabled} style={{
@@ -161,9 +161,9 @@ function Screen1({ T, go, lang }: { T: Translation; go: (s: string) => void; lan
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 0, border: "1px solid " + C.rule, background: C.card, borderRadius: 4, overflow: "hidden" }}>
         <Counter n="01" tag={lang === "fr" ? "Direct" : "Direct"} title={T.method_email} desc={T.method_email_d} cta={lang === "fr" ? "Connecter" : "Connect"} onClick={() => go("email")} accent={C.clay} />
         <div style={{ width: 1, background: C.rule }} />
-        <Counter n="02" tag="JSON" title={T.method_json} desc={T.method_json_d} cta={lang === "fr" ? "Bientôt" : "Soon"} onClick={() => {}} accent={C.moss} />
+        <Counter n="02" tag="JSON" title={T.method_json} desc={T.method_json_d} cta={lang === "fr" ? "Bientôt" : "Soon"} onClick={() => { }} accent={C.moss} />
         <div style={{ width: 1, background: C.rule }} />
-        <Counter n="03" tag=".EML" title={T.method_eml} desc={T.method_eml_d} cta={lang === "fr" ? "Bientôt" : "Soon"} onClick={() => {}} accent={C.ochre} />
+        <Counter n="03" tag=".EML" title={T.method_eml} desc={T.method_eml_d} cta={lang === "fr" ? "Bientôt" : "Soon"} onClick={() => { }} accent={C.ochre} />
       </div>
     </div>
   );
@@ -177,8 +177,8 @@ function Counter({ n, tag, title, desc, cta, onClick, accent }: {
       textAlign: "left", padding: "28px 24px 22px", background: "transparent", border: "none",
       cursor: "pointer", fontFamily: SANS, display: "flex", flexDirection: "column", gap: 12,
     }}
-    onMouseEnter={(e) => (e.currentTarget.style.background = C.paper)}
-    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
+      onMouseEnter={(e) => (e.currentTarget.style.background = C.paper)}
+      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
         <span style={{ fontFamily: MONO, fontSize: 32, color: accent, fontWeight: 500 }}>{n}</span>
         <span style={{ fontSize: 10, color: C.muted, letterSpacing: 2, textTransform: "uppercase", fontWeight: 700 }}>{tag}</span>
@@ -329,8 +329,8 @@ function Dashboard({ T, go, lang, transactions, saved }: {
               </tr>
             </thead>
             <tbody>
-              {transactions.slice().sort((a, b) => a.sort_key.localeCompare(b.sort_key)).map((t) => (
-                <tr key={t.transaction_number + t.sort_key} style={{ borderBottom: "1px dashed " + C.softrule }}>
+              {transactions.slice().sort((a, b) => a.sort_key.localeCompare(b.sort_key)).map((t, i) => (
+                <tr key={`${t.sort_key}-${i}`} style={{ borderBottom: "1px dashed " + C.softrule }}>
                   <td style={ctd}>{t.date}</td>
                   <td style={{ ...ctd, fontFamily: SERIF, fontSize: 14, fontStyle: "italic" }}>{t.recipient_name}</td>
                   <td style={ctd}><span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><Flag code={COUNTRY_CODE[t.country]} size={16} />{t.country}</span></td>
@@ -440,11 +440,11 @@ export default function ComptoirTheme() {
       <TopBar T={T} lang={lang} setLang={setLang} step={step} />
       <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column" }}>
         {error && <div style={{ background: "#fee", borderBottom: "1px solid #fcc", padding: "10px 40px", fontSize: 13, color: "#c00" }}>⚠️ {error}</div>}
-        {screen === "start"     && <Screen1 T={T} go={go} lang={lang} />}
-        {screen === "email"     && <ScreenEmail T={T} go={go} lang={lang} onExtract={handleExtract} />}
-        {screen === "loading"   && <ScreenLoading T={T} lang={lang} />}
+        {screen === "start" && <Screen1 T={T} go={go} lang={lang} />}
+        {screen === "email" && <ScreenEmail T={T} go={go} lang={lang} onExtract={handleExtract} />}
+        {screen === "loading" && <ScreenLoading T={T} lang={lang} />}
         {screen === "dashboard" && <Dashboard T={T} go={go} lang={lang} transactions={transactions} saved={saved} />}
-        {screen === "pdf"       && <ScreenPdf T={T} go={go} lang={lang} transactions={transactions} eurRates={eurRates} recipientName={formMeta.recipientName} startYear={formMeta.startYear} endYear={formMeta.endYear} />}
+        {screen === "pdf" && <ScreenPdf T={T} go={go} lang={lang} transactions={transactions} eurRates={eurRates} recipientName={formMeta.recipientName} startYear={formMeta.startYear} endYear={formMeta.endYear} />}
       </div>
     </div>
   );
