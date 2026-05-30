@@ -80,12 +80,15 @@ const APanel = ({ title, children, style = {} }: {
   </div>
 );
 
-const AInput = ({ label, value, onChange, type = "text", placeholder, hint }: {
+const AInput = ({ label, value, onChange, type = "text", placeholder, hint, tooltip }: {
   label: string; value: string; onChange: (v: string) => void;
-  type?: string; placeholder?: string; hint?: string;
+  type?: string; placeholder?: string; hint?: string; tooltip?: string;
 }) => (
   <label style={{ display: "block" }}>
-    <div style={{ fontFamily: MONO, fontSize: 10, color: A.muted, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 6 }}>{label}</div>
+    <div style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: MONO, fontSize: 10, color: A.muted, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 6 }}>
+      {label}
+      {tooltip && <Tooltip text={tooltip} />}
+    </div>
     <input value={value} type={type} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} style={{
       width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid " + A.line,
       background: A.bg, fontFamily: SANS, fontSize: 14, color: A.ink, outline: "none",
@@ -94,6 +97,96 @@ const AInput = ({ label, value, onChange, type = "text", placeholder, hint }: {
     {hint && <div style={{ fontSize: 11.5, color: A.muted, marginTop: 6 }}>{hint}</div>}
   </label>
 );
+
+// ── Provider onboarding ───────────────────────────────────────────────────────
+interface ProviderInfo {
+  name: string; icon: string; link: string;
+  steps: Array<{ fr: string; en: string }>;
+}
+
+function getProviderInfo(email: string): ProviderInfo | null {
+  const domain = email.split("@")[1]?.toLowerCase() ?? "";
+  if (!domain || domain.length < 3) return null;
+  if (domain.includes("gmail")) return {
+    name: "Gmail", icon: "G",
+    link: "https://myaccount.google.com/apppasswords",
+    steps: [
+      { fr: "Activez la validation en 2 étapes sur votre compte Google", en: "Enable 2-Step Verification on your Google account" },
+      { fr: "Créez un mot de passe d'application (lien ci-dessous)", en: "Create an app password (link below)" },
+      { fr: "Activez IMAP : Paramètres → Voir tous les paramètres → Transfert et POP/IMAP", en: "Enable IMAP: Settings → See all settings → Forwarding and POP/IMAP" },
+    ],
+  };
+  if (domain.includes("outlook") || domain.includes("hotmail") || domain.includes("live") || domain.includes("msn")) return {
+    name: "Outlook", icon: "O",
+    link: "https://account.microsoft.com/security",
+    steps: [
+      { fr: "Activez la vérification en deux étapes sur votre compte Microsoft", en: "Enable two-step verification on your Microsoft account" },
+      { fr: "Créez un mot de passe d'application (lien ci-dessous)", en: "Create an app password (link below)" },
+      { fr: "IMAP est activé par défaut sur Outlook", en: "IMAP is enabled by default on Outlook" },
+    ],
+  };
+  return null;
+}
+
+function ProviderGuide({ email, lang }: { email: string; lang: Lang }) {
+  const info = getProviderInfo(email);
+  if (!info) return null;
+  return (
+    <div style={{ background: A.surface2, border: "1px solid " + A.line, borderRadius: 10, padding: "12px 14px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <div style={{ width: 18, height: 18, borderRadius: 4, background: A.ink, display: "grid", placeItems: "center", color: A.accent, fontFamily: MONO, fontWeight: 700, fontSize: 9.5 }}>
+          {info.icon}
+        </div>
+        <span style={{ fontFamily: MONO, fontSize: 9.5, color: A.muted, letterSpacing: 1.2, textTransform: "uppercase" }}>
+          {info.name} · IMAP Setup
+        </span>
+      </div>
+      <ol style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 5 }}>
+        {info.steps.map((step, i) => (
+          <li key={i} style={{ fontSize: 11.5, color: A.inkSoft, lineHeight: 1.55 }}>
+            {lang === "fr" ? step.fr : step.en}
+          </li>
+        ))}
+      </ol>
+      <a href={info.link} target="_blank" rel="noopener noreferrer" style={{
+        display: "inline-flex", alignItems: "center", gap: 4, marginTop: 10,
+        fontSize: 11, fontFamily: MONO, color: A.accent, textDecoration: "none", letterSpacing: 0.3,
+      }}>
+        → {lang === "fr" ? "Générer un mot de passe d'application" : "Generate an app password"}
+      </a>
+    </div>
+  );
+}
+
+function Tooltip({ text }: { text: string }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <span style={{ position: "relative", display: "inline-flex", verticalAlign: "middle" }}>
+      <span
+        onMouseEnter={() => setVisible(true)}
+        onMouseLeave={() => setVisible(false)}
+        style={{
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          width: 13, height: 13, borderRadius: "50%",
+          border: "1px solid " + A.line, color: A.muted,
+          fontFamily: MONO, fontSize: 8.5, cursor: "default", userSelect: "none",
+        }}
+      >?</span>
+      {visible && (
+        <div style={{
+          position: "absolute", bottom: "calc(100% + 8px)", left: "50%",
+          transform: "translateX(-50%)",
+          background: A.ink, color: A.bg, borderRadius: 8,
+          padding: "9px 12px", fontSize: 11.5, lineHeight: 1.55,
+          fontFamily: SANS, width: 220, zIndex: 200, pointerEvents: "none",
+          boxShadow: "0 4px 16px rgba(0,0,0,0.25)",
+        }}>
+          {text}
+        </div>
+      )}
+    </span>
+  );
+}
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 type ToastKind = "ok" | "error" | "info";
@@ -312,7 +405,15 @@ function ScreenEmail({ T, go, lang, onExtract }: {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <AInput label={T.email_label} value={email} onChange={(v) => { setEmail(v); setTestStatus("idle"); }} placeholder="vous@gmail.com" />
-            <AInput label={T.pw_label} value={pw} onChange={(v) => { setPw(v); setTestStatus("idle"); }} type="password" placeholder="xxxx xxxx xxxx xxxx" hint={T.pw_hint} />
+            <ProviderGuide email={email} lang={lang} />
+            <AInput
+              label={T.pw_label} value={pw} type="password"
+              onChange={(v) => { setPw(v); setTestStatus("idle"); }}
+              placeholder="xxxx xxxx xxxx xxxx" hint={T.pw_hint}
+              tooltip={lang === "fr"
+                ? "Mot de passe spécifique à cette application — pas votre mot de passe habituel. Générez-en un depuis les paramètres de sécurité de Gmail ou Outlook."
+                : "App-specific password — not your regular password. Generate one from Gmail or Outlook security settings."}
+            />
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <button
                 onClick={handleTest}
@@ -343,7 +444,12 @@ function ScreenEmail({ T, go, lang, onExtract }: {
               )}
             </div>
             <div>
-              <div style={{ fontFamily: MONO, fontSize: 10, color: A.muted, letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>{T.recipient_label}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: MONO, fontSize: 10, color: A.muted, letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>
+                {T.recipient_label}
+                <Tooltip text={lang === "fr"
+                  ? "Optionnel — laissez vide pour détecter automatiquement le bénéficiaire depuis le contenu des emails WorldRemit."
+                  : "Optional — leave blank to auto-detect the recipient name from WorldRemit email content."} />
+              </div>
               {recipients.map((r, i) => (
                 <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
                   <input value={r} onChange={e => setRecipient(i, e.target.value)}
