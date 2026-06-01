@@ -5,6 +5,7 @@ Provides incremental imports — already-stored transactions are skipped,
 so re-running the extractor never creates duplicates in the database.
 """
 
+import os
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import asdict
@@ -13,7 +14,8 @@ from typing import List, Optional
 
 from .models import WorldRemitTransaction
 
-DEFAULT_DB = Path(__file__).parent.parent / "worldremit_transactions.db"
+_env_path = os.getenv("DB_PATH")
+DEFAULT_DB = Path(_env_path) if _env_path else Path(__file__).parent.parent / "worldremit_transactions.db"
 
 _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS transactions (

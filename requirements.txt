@@ -16,5 +16,3 @@ pymongo>=4.7.0
 # Env
 python-dotenv>=1.0.0
 
-# Streamlit frontend (local / legacy)
-streamlit>=1.35.0
