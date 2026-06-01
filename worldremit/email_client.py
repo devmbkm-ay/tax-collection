@@ -76,10 +76,19 @@ def probe_connection(email_address: str, password: str) -> tuple[bool, str]:
             conn.logout()
         except imaplib.IMAP4.error as e:
             err = str(e).lower()
-            if any(k in err for k in ("authenticationfailed", "invalid credentials", "authentication failed")):
+            is_microsoft = any(x in host for x in ("outlook", "office365", "hotmail", "live"))
+            if any(k in err for k in ("authenticationfailed", "invalid credentials", "authentication failed", "authenticate")):
+                if is_microsoft:
+                    return False, (
+                        "Connexion refusée par Microsoft. Deux causes possibles :\n"
+                        "1. L'accès IMAP n'est pas activé — allez sur outlook.com → Paramètres → Courrier → Synchroniser la messagerie → activer IMAP.\n"
+                        "2. Mot de passe incorrect — utilisez un mot de passe d'application (sans espaces) généré depuis account.microsoft.com/security."
+                    )
                 return False, "Identifiants incorrects. Vérifiez votre mot de passe d'application."
             if "application-specific" in err or "app password" in err:
                 return False, "Mot de passe d'application requis (pas votre mot de passe habituel)."
+            if any(k in err for k in ("unavailable", "imap access disabled", "imap not enabled", "account not activated")):
+                return False, "L'accès IMAP est désactivé sur ce compte. Activez-le dans les paramètres de votre messagerie."
             return False, f"Erreur IMAP : {e}"
         return True, f"Connecté à {host} avec succès."
     except OSError:

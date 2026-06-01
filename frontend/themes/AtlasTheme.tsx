@@ -121,8 +121,8 @@ function getProviderInfo(email: string): ProviderInfo | null {
     link: "https://account.microsoft.com/security",
     steps: [
       { fr: "Activez la vérification en deux étapes sur votre compte Microsoft", en: "Enable two-step verification on your Microsoft account" },
-      { fr: "Créez un mot de passe d'application (lien ci-dessous)", en: "Create an app password (link below)" },
-      { fr: "IMAP est activé par défaut sur Outlook", en: "IMAP is enabled by default on Outlook" },
+      { fr: "Activez IMAP : Outlook.com → Paramètres → Courrier → Synchroniser la messagerie → activer IMAP", en: "Enable IMAP: Outlook.com → Settings → Mail → Sync email → enable IMAP" },
+      { fr: "Créez un mot de passe d'application via le lien ci-dessous (Options avancées de sécurité)", en: "Create an app password via the link below (Advanced security options)" },
     ],
   };
   return null;
@@ -492,7 +492,7 @@ function ScreenEmail({ T, go, lang, onExtract }: {
           <div style={{ background: A.ink, color: A.bg, borderRadius: 16, padding: "18px 22px", fontFamily: MONO, fontSize: 11.5, lineHeight: 1.9 }}>
             <div style={{ color: A.muted, marginBottom: 6, letterSpacing: 1, textTransform: "uppercase", fontSize: 9.5 }}># servers</div>
             <div><span style={{ color: A.accent }}>›</span> imap.gmail.com:993</div>
-            <div><span style={{ color: A.accent }}>›</span> imap.outlook.com:993</div>
+            <div><span style={{ color: A.accent }}>›</span> outlook.office365.com:993</div>
           </div>
         </div>
       </div>
