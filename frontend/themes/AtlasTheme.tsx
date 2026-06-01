@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { streamExtraction, downloadPdf, downloadCsv, triggerDownload, testConnection, updateTransaction } from "@/lib/api";
-import type { ExtractionEvent } from "@/lib/types";
 import type { Transaction, ExtractionEvent } from "@/lib/types";
 import {
   type Translation,
@@ -604,7 +603,7 @@ const A_PAGE_SIZE = 20;
 type TxKey = { sort_key: string; amount: string; currency: string; transaction_number: string };
 type EditableField = "recipient_name" | "country" | "amount_eur";
 
-function Dashboard({ T, go, lang, transactions, saved, onUpdate }: {
+function Dashboard({ T, go, lang, transactions, saved, onUpdate, onToast }: {
   T: Translation; go: (s: string) => void; lang: Lang;
   transactions: Transaction[]; saved: number;
   onUpdate: (key: TxKey, patch: Partial<Record<EditableField, string>>) => Promise<void>;
