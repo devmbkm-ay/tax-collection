@@ -103,3 +103,9 @@ env/
 
 # Qodo IDE or workspace settings
 .qodo/
+
+# Sensitive data — never commit financial exports, local DBs, or reports
+*.db
+*.pdf
+worldremit_transactions*.json
+mockup/data/
