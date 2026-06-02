@@ -10,6 +10,7 @@ secure-smtplib==0.1.1
 fastapi>=0.111.0
 uvicorn[standard]>=0.30.0
 python-multipart>=0.0.9
+slowapi>=0.1.9
 
 # Database
 pymongo>=4.7.0

@@ -15,10 +15,13 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from worldremit import WorldRemitExtractor
 from worldremit.report import generate_pdf_report, export_csv
@@ -32,7 +35,10 @@ else:
 
 # ── App setup ────────────────────────────────────────────────────────────────
 
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="FiscalFlow API", version="1.0.0")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 _ALLOWED_ORIGINS = os.getenv(
     "CORS_ORIGINS",
@@ -52,41 +58,70 @@ app.add_middleware(
 
 
 class ExtractRequest(BaseModel):
-    email: str
-    password: str
-    recipient_name: Optional[str] = None      # single name (legacy / optional)
-    recipient_names: Optional[List[str]] = None  # multiple names
-    start_year: int
-    start_month: int = 1
-    end_year: int
-    end_month: int = 12
-    lang: str = "fr"
+    email: str = Field(max_length=254)
+    password: str = Field(max_length=200)
+    recipient_name: Optional[str] = Field(default=None, max_length=200)
+    recipient_names: Optional[List[str]] = Field(default=None, max_length=10)
+    start_year: int = Field(ge=2000, le=2100)
+    start_month: int = Field(default=1, ge=1, le=12)
+    end_year: int = Field(ge=2000, le=2100)
+    end_month: int = Field(default=12, ge=1, le=12)
+    lang: str = Field(default="fr", pattern="^(fr|en)$")
+
+    @field_validator("recipient_names", mode="before")
+    @classmethod
+    def validate_recipient_names(cls, v):
+        if v is not None:
+            if len(v) > 10:
+                raise ValueError("Maximum 10 recipients allowed.")
+            for name in v:
+                if len(name) > 200:
+                    raise ValueError("Recipient name must be 200 characters or fewer.")
+        return v
+
+    @field_validator("end_year", mode="after")
+    @classmethod
+    def validate_year_range(cls, end_year, info):
+        start_year = info.data.get("start_year")
+        if start_year is not None and end_year < start_year:
+            raise ValueError("end_year must be >= start_year.")
+        return end_year
 
 
 class TestConnectionRequest(BaseModel):
-    email: str
-    password: str
+    email: str = Field(max_length=254)
+    password: str = Field(max_length=200)
 
 
 class UpdateTransactionRequest(BaseModel):
-    sort_key: str
-    amount: str
-    currency: str
-    transaction_number: str
-    recipient_name: Optional[str] = None
-    country: Optional[str] = None
-    amount_eur: Optional[str] = None
+    sort_key: str = Field(max_length=200)
+    amount: str = Field(max_length=50)
+    currency: str = Field(max_length=10)
+    transaction_number: str = Field(max_length=100)
+    recipient_name: Optional[str] = Field(default=None, max_length=200)
+    country: Optional[str] = Field(default=None, max_length=100)
+    amount_eur: Optional[str] = Field(default=None, max_length=50)
+
+    @field_validator("amount_eur", mode="before")
+    @classmethod
+    def validate_amount_eur(cls, v):
+        if v is not None:
+            try:
+                float(v)
+            except (ValueError, TypeError):
+                raise ValueError("amount_eur must be a valid decimal number.")
+        return v
 
 
 class ReportRequest(BaseModel):
-    transactions: list
+    transactions: list = Field(max_length=5000)
     eur_rates: dict = {}
-    recipient_name: str
-    start_year: int
-    end_year: int
-    lang: str = "fr"
-    declarant_name: str = ""
-    declarant_address: str = ""
+    recipient_name: str = Field(max_length=200)
+    start_year: int = Field(ge=2000, le=2100)
+    end_year: int = Field(ge=2000, le=2100)
+    lang: str = Field(default="fr", pattern="^(fr|en)$")
+    declarant_name: str = Field(default="", max_length=200)
+    declarant_address: str = Field(default="", max_length=500)
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -98,7 +133,8 @@ async def health():
 
 
 @app.post("/api/test-connection")
-async def test_connection(req: TestConnectionRequest):
+@limiter.limit("10/minute")
+async def test_connection(request: Request, req: TestConnectionRequest):
     """Fast IMAP probe — returns 200 on success, 400 with a friendly message on failure."""
     from worldremit.email_client import probe_connection
     loop = asyncio.get_event_loop()
@@ -109,7 +145,8 @@ async def test_connection(req: TestConnectionRequest):
 
 
 @app.post("/api/extract/stream")
-async def extract_stream(req: ExtractRequest):
+@limiter.limit("5/minute")
+async def extract_stream(request: Request, req: ExtractRequest):  # noqa: ARG001
     """SSE stream of extraction progress. Emits JSON events until 'done' or 'error'."""
     from worldremit.email_client import EmailClient
     from worldremit.exchange import fetch_eur_rates
@@ -175,7 +212,8 @@ async def extract_stream(req: ExtractRequest):
 
 
 @app.post("/api/extract")
-async def extract(req: ExtractRequest):
+@limiter.limit("5/minute")
+async def extract(request: Request, req: ExtractRequest):  # noqa: ARG001
     """Connect to IMAP, extract WorldRemit transactions and persist them."""
     extractor = WorldRemitExtractor(req.email, req.password)
     loop = asyncio.get_event_loop()
@@ -223,7 +261,8 @@ async def extract(req: ExtractRequest):
 
 
 @app.post("/api/report/pdf")
-async def report_pdf(req: ReportRequest):
+@limiter.limit("20/minute")
+async def report_pdf(request: Request, req: ReportRequest):  # noqa: ARG001
     """Generate a PDF report from a transactions payload and stream it back."""
     from worldremit.models import WorldRemitTransaction
 
@@ -260,7 +299,8 @@ async def report_pdf(req: ReportRequest):
 
 
 @app.post("/api/report/csv")
-async def report_csv(req: ReportRequest):
+@limiter.limit("20/minute")
+async def report_csv(request: Request, req: ReportRequest):  # noqa: ARG001
     """Generate a CSV export from a transactions payload."""
     from worldremit.models import WorldRemitTransaction
 
@@ -280,7 +320,8 @@ async def report_csv(req: ReportRequest):
 
 
 @app.post("/api/report/xlsx")
-async def report_xlsx(req: ReportRequest):
+@limiter.limit("20/minute")
+async def report_xlsx(request: Request, req: ReportRequest):  # noqa: ARG001
     """Generate an Excel (.xlsx) export from a transactions payload."""
     from worldremit.models import WorldRemitTransaction
     from worldremit.report import export_xlsx
@@ -300,7 +341,8 @@ async def report_xlsx(req: ReportRequest):
 
 
 @app.post("/api/report/zip")
-async def report_zip(req: ReportRequest):
+@limiter.limit("20/minute")
+async def report_zip(request: Request, req: ReportRequest):  # noqa: ARG001
     """Generate one PDF + CSV per unique recipient, bundled as a ZIP archive."""
     from worldremit.models import WorldRemitTransaction
 
@@ -350,7 +392,8 @@ async def report_zip(req: ReportRequest):
 
 
 @app.patch("/api/transactions")
-async def patch_transaction(req: UpdateTransactionRequest):
+@limiter.limit("60/minute")
+async def patch_transaction(request: Request, req: UpdateTransactionRequest):  # noqa: ARG001
     """Update editable fields (recipient_name, country, amount_eur) of a stored transaction."""
     key = {
         "sort_key": req.sort_key,
@@ -375,14 +418,16 @@ async def patch_transaction(req: UpdateTransactionRequest):
 
 
 @app.get("/api/transactions")
-async def get_transactions(
+@limiter.limit("120/minute")
+async def get_transactions(  # noqa: ARG001
+    request: Request,
     recipient_name: Optional[str] = None,
     start_year: Optional[int] = None,
     start_month: int = 1,
     end_year: Optional[int] = None,
     end_month: int = 12,
-    page: int = 1,
-    page_size: int = 20,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=200),
 ):
     """Query persisted transactions with optional filters and pagination."""
     import math
