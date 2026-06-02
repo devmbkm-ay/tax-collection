@@ -6,9 +6,9 @@ services:
     expose:
       - "8000"
     environment:
-      - MONGODB_URI=${MONGODB_URI:-}
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
-      - DB_PATH=${DB_PATH:-}
+      - MONGODB_URI
+      - CORS_ORIGINS
+      - DB_PATH
     volumes:
       - db_data:/data
     restart: unless-stopped
@@ -18,7 +18,7 @@ services:
       context: .
       dockerfile: Dockerfile.frontend
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        - NEXT_PUBLIC_API_URL
     expose:
       - "3000"
     depends_on:
