@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { streamExtraction, downloadPdf, downloadCsv, triggerDownload, testConnection, updateTransaction } from "@/lib/api";
+import { useState, useEffect } from "react";
+import { streamExtraction, downloadPdf, downloadCsv, triggerDownload, testConnection, updateTransaction, fetchStats } from "@/lib/api";
 import type { Transaction, ExtractionEvent } from "@/lib/types";
 import {
   type Translation,
@@ -120,6 +120,53 @@ const AMonthYear = ({ label, month, year, onMonth, onYear, lang }: {
           style={{ ...sel, padding: "11px 8px" }} />
       </div>
     </label>
+  );
+};
+
+const AAutocomplete = ({ value, onChange, suggestions, placeholder, style }: {
+  value: string; onChange: (v: string) => void;
+  suggestions: string[]; placeholder?: string; style?: React.CSSProperties;
+}) => {
+  const [open, setOpen] = useState(false);
+  const matches = suggestions.filter(s => s.toLowerCase().includes(value.toLowerCase()) && s !== value);
+  const inputStyle: React.CSSProperties = {
+    flex: 1, background: A.bg, border: "1px solid " + A.line, borderRadius: 8,
+    padding: "8px 10px", fontFamily: SANS, fontSize: 13, color: A.ink, outline: "none",
+    ...style,
+  };
+  return (
+    <div style={{ position: "relative", flex: 1 }}>
+      <input
+        value={value}
+        placeholder={placeholder}
+        onChange={e => { onChange(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        style={inputStyle}
+      />
+      {open && matches.length > 0 && (
+        <div style={{
+          position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50,
+          background: A.surface, border: "1px solid " + A.line, borderRadius: 8,
+          boxShadow: "0 4px 16px rgba(0,0,0,0.08)", marginTop: 4, overflow: "hidden",
+        }}>
+          {matches.slice(0, 6).map(s => (
+            <div
+              key={s}
+              onMouseDown={() => { onChange(s); setOpen(false); }}
+              style={{
+                padding: "9px 12px", fontFamily: SANS, fontSize: 13, color: A.ink,
+                cursor: "pointer", borderBottom: "1px solid " + A.line,
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = A.surface2)}
+              onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+            >
+              {s}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -394,8 +441,11 @@ function ScreenEmail({ T, go, lang, onExtract }: {
   const [endMonth, setEndMonth] = useState(12);
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "ok" | "error">("idle");
   const [testMsg, setTestMsg] = useState("");
+  const [knownRecipients, setKnownRecipients] = useState<string[]>([]);
 
   const setRecipient = (i: number, v: string) => setRecipients(rs => rs.map((r, j) => j === i ? v : r));
+
+  useEffect(() => { fetchStats().then(s => setKnownRecipients(s.recipients.filter(Boolean))); }, []);
   const addRecipient = () => setRecipients(rs => [...rs, ""]);
   const removeRecipient = (i: number) => setRecipients(rs => rs.length > 1 ? rs.filter((_, j) => j !== i) : [""]);
 
@@ -479,9 +529,12 @@ function ScreenEmail({ T, go, lang, onExtract }: {
               </div>
               {recipients.map((r, i) => (
                 <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-                  <input value={r} onChange={e => setRecipient(i, e.target.value)}
+                  <AAutocomplete
+                    value={r}
+                    onChange={v => setRecipient(i, v)}
+                    suggestions={knownRecipients}
                     placeholder={i === 0 ? (lang === "fr" ? "Optionnel — détecté automatiquement" : "Optional — auto-detected") : (lang === "fr" ? "Autre bénéficiaire" : "Another recipient")}
-                    style={{ flex: 1, background: A.bg, border: "1px solid " + A.line, borderRadius: 8, padding: "8px 10px", fontFamily: SANS, fontSize: 13, color: A.ink, outline: "none" }} />
+                  />
                   {recipients.length > 1 && (
                     <button onClick={() => removeRecipient(i)} style={{ background: "none", border: "1px solid " + A.line, borderRadius: 8, padding: "0 10px", cursor: "pointer", color: A.muted, fontFamily: MONO, fontSize: 14 }}>×</button>
                   )}

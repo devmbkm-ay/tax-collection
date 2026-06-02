@@ -13,12 +13,20 @@ export async function testConnection(email: string, password: string): Promise<s
   return data.message;
 }
 
+export async function fetchStats(): Promise<{ recipients: string[]; year_range: [number, number] | null; total: number }> {
+  const res = await fetch(`${BASE}/api/stats`).catch(() => null);
+  if (!res?.ok) return { recipients: [], year_range: null, total: 0 };
+  return res.json();
+}
+
 export async function* streamExtraction(payload: {
   email: string;
   password: string;
   recipient_names: string[];
   start_year: number;
+  start_month: number;
   end_year: number;
+  end_month: number;
   lang: string;
 }): AsyncGenerator<ExtractionEvent> {
   const res = await fetch(`${BASE}/api/extract/stream`, {
