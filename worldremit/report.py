@@ -31,10 +31,12 @@ def generate_pdf_report(
     transactions: List[WorldRemitTransaction],
     eur_rates: Dict[str, float],
     output_file: str = "worldremit_transactions_report.pdf",
-    recipient_name: str = "Patrick Kayombya",
+    recipient_name: str = "",
     start_year: int = 2023,
     end_year: int = 2023,
     lang: str = 'fr',
+    declarant_name: str = "",
+    declarant_address: str = "",
 ) -> str:
     """
     Build and save a PDF tax report.
@@ -61,6 +63,26 @@ def generate_pdf_report(
         alignment=TA_CENTER, textColor=colors.darkblue,
     )
     story.append(Paragraph(tr['title'], title_style))
+
+    # ── Declarant block (optional) ────────────────────────────────────────
+    if declarant_name or declarant_address:
+        decl_style = ParagraphStyle(
+            'Declarant', parent=styles['Normal'],
+            fontSize=10, spaceAfter=6, leading=15,
+            leftIndent=20, borderPadding=(8, 12, 8, 12),
+            backColor=colors.Color(0.93, 0.95, 1.0),
+            borderColor=colors.darkblue, borderWidth=0.5, borderRadius=4,
+        )
+        decl_label = tr.get('declarant', 'Déclarant') if lang == 'fr' else 'Declarant'
+        lines = [f"<b>{decl_label}</b><br/>"]
+        if declarant_name:
+            lines.append(f"{declarant_name}<br/>")
+        if declarant_address:
+            for addr_line in declarant_address.splitlines():
+                if addr_line.strip():
+                    lines.append(f"{addr_line.strip()}<br/>")
+        story.append(Paragraph("".join(lines), decl_style))
+        story.append(Spacer(1, 14))
 
     # ── Summary header ───────────────────────────────────────────────────
     currency_totals: Dict[str, float] = {}

@@ -877,6 +877,8 @@ function ScreenPdf({ T, go, lang, transactions, eurRates, recipientNames, startY
 }) {
   const s = summarize(transactions);
   const [loading, setLoading] = useState<string | null>(null);
+  const [declarantName, setDeclarantName] = useState("");
+  const [declarantAddress, setDeclarantAddress] = useState("");
   const months = lang === "fr" ? MONTH_NAMES_FR : MONTH_NAMES_EN;
   const startLabel = `${months[startMonth - 1]} ${startYear}`;
   const endLabel = `${months[endMonth - 1]} ${endYear}`;
@@ -884,7 +886,7 @@ function ScreenPdf({ T, go, lang, transactions, eurRates, recipientNames, startY
     ? String(startYear)
     : startLabel === endLabel ? startLabel : `${startLabel} – ${endLabel}`;
   const recipientLabel = recipientNames.filter(Boolean).join(", ") || "—";
-  const payload = { transactions, eur_rates: eurRates, recipient_name: recipientLabel, start_year: startYear, end_year: endYear, lang };
+  const payload = { transactions, eur_rates: eurRates, recipient_name: recipientLabel, start_year: startYear, end_year: endYear, lang, declarant_name: declarantName, declarant_address: declarantAddress };
 
   const handlePdf = async () => {
     setLoading("pdf");
@@ -955,6 +957,36 @@ function ScreenPdf({ T, go, lang, transactions, eurRates, recipientNames, startY
           <div style={{ marginTop: 16, fontSize: 11, color: A.muted, fontStyle: "italic", borderTop: "1px dashed " + A.line, paddingTop: 10 }}>{T.disclaimer}</div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <APanel title={lang === "fr" ? "Page de couverture PDF" : "PDF Cover Page"}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
+              <AInput
+                label={lang === "fr" ? "Votre nom" : "Your name"}
+                value={declarantName}
+                onChange={setDeclarantName}
+                placeholder={lang === "fr" ? "Prénom Nom" : "First Last"}
+              />
+              <label style={{ display: "block" }}>
+                <div style={{ fontFamily: MONO, fontSize: 10, color: A.muted, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 6 }}>
+                  {lang === "fr" ? "Votre adresse" : "Your address"}
+                </div>
+                <textarea
+                  value={declarantAddress}
+                  onChange={e => setDeclarantAddress(e.target.value)}
+                  placeholder={lang === "fr" ? "12 rue des Lilas\n75001 Paris" : "12 Maple St\nLondon E1 6RF"}
+                  rows={3}
+                  style={{
+                    width: "100%", padding: "11px 14px", borderRadius: 10,
+                    border: "1px solid " + A.line, background: A.bg,
+                    fontFamily: SANS, fontSize: 13, color: A.ink,
+                    outline: "none", resize: "vertical", boxSizing: "border-box",
+                  }}
+                />
+              </label>
+              <div style={{ fontSize: 11, color: A.muted, fontStyle: "italic" }}>
+                {lang === "fr" ? "Ces informations apparaissent uniquement dans le PDF." : "Only included in the PDF export."}
+              </div>
+            </div>
+          </APanel>
           <APanel title={lang === "fr" ? "Formats" : "Formats"}>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
               <DLRow ext="PDF" name={`rapport_${period}.pdf`} onDl={handlePdf} primary />

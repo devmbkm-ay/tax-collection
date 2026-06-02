@@ -42,4 +42,6 @@ export interface ReportPayload {
   start_year: number;
   end_year: number;
   lang: string;
+  declarant_name?: string;
+  declarant_address?: string;
 }

@@ -83,6 +83,8 @@ class ReportRequest(BaseModel):
     start_year: int
     end_year: int
     lang: str = "fr"
+    declarant_name: str = ""
+    declarant_address: str = ""
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -236,6 +238,8 @@ async def report_pdf(req: ReportRequest):
         start_year=req.start_year,
         end_year=req.end_year,
         lang=req.lang,
+        declarant_name=req.declarant_name,
+        declarant_address=req.declarant_address,
     )
 
     pdf_bytes = Path(tmp_path).read_bytes()
