@@ -29,9 +29,9 @@ from worldremit.report import generate_pdf_report, export_csv
 # ── DB backend — MongoDB in production, SQLite locally ──────────────────────
 
 if os.getenv("MONGODB_URI"):
-    from worldremit.db_mongo import save_transactions, load_transactions, get_stats, update_transaction as update_transaction_db
+    from worldremit.db_mongo import save_transactions, load_transactions, get_stats, update_transaction as update_transaction_db, save_eur_rates, get_eur_rates
 else:
-    from worldremit.db import save_transactions, load_transactions, get_stats, update_transaction as update_transaction_db
+    from worldremit.db import save_transactions, load_transactions, get_stats, update_transaction as update_transaction_db, save_eur_rates, get_eur_rates
 
 # ── App setup ────────────────────────────────────────────────────────────────
 
@@ -166,6 +166,7 @@ async def extract_stream(request: Request, req: ExtractRequest):  # noqa: ARG001
 
             emit(step="rates")
             eur_rates = fetch_eur_rates()
+            save_eur_rates(eur_rates)
 
             names: List[Optional[str]] = req.recipient_names or (
                 [req.recipient_name] if req.recipient_name else [None]
@@ -241,6 +242,9 @@ async def extract(request: Request, req: ExtractRequest):  # noqa: ARG001
         )
     finally:
         extractor.disconnect()
+
+    if extractor.eur_rates:
+        save_eur_rates(extractor.eur_rates)
 
     if not extractor.transactions:
         return {
@@ -453,3 +457,9 @@ async def get_transactions(  # noqa: ARG001
 async def stats():
     """Return aggregate statistics about stored transactions."""
     return get_stats()
+
+
+@app.get("/api/rates")
+async def rates(date: Optional[str] = None):
+    """Return a stored exchange-rate snapshot (latest if no date given)."""
+    return {"rates": get_eur_rates(date), "date": date}

@@ -126,6 +126,27 @@ def update_transaction(key: dict, patch: dict) -> int:
     return result.modified_count
 
 
+def save_eur_rates(rates: dict, date: str = None) -> None:
+    """Persist an exchange-rate snapshot for the given date (defaults to today)."""
+    import datetime as dt
+    _collection()  # ensure client + index initialised
+    if date is None:
+        date = dt.date.today().isoformat()
+    _db["exchange_rate_snapshots"].update_one(
+        {"date": date},
+        {"$set": {"date": date, "rates": rates, "saved_at": datetime.now(timezone.utc)}},
+        upsert=True,
+    )
+
+
+def get_eur_rates(date: str = None) -> dict:
+    """Return the stored rate snapshot for a date, or the most recent one if omitted."""
+    _collection()
+    coll = _db["exchange_rate_snapshots"]
+    doc = coll.find_one({"date": date}) if date else coll.find_one(sort=[("date", -1)])
+    return doc["rates"] if doc else {}
+
+
 def get_stats() -> dict:
     coll = _collection()
     total = coll.count_documents({})

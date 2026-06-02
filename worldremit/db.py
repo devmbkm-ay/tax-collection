@@ -34,6 +34,14 @@ CREATE TABLE IF NOT EXISTS transactions (
 )
 """
 
+_CREATE_RATES_TABLE = """
+CREATE TABLE IF NOT EXISTS exchange_rate_snapshots (
+    date      TEXT PRIMARY KEY,
+    rates_json TEXT NOT NULL,
+    saved_at  TEXT DEFAULT (datetime('now'))
+)
+"""
+
 
 @contextmanager
 def _connect(db_path: Path):
@@ -47,9 +55,10 @@ def _connect(db_path: Path):
 
 
 def init_db(db_path: Path = DEFAULT_DB) -> None:
-    """Create the database and table if they don't exist, and remove malformed rows."""
+    """Create the database and tables if they don't exist, and remove malformed rows."""
     with _connect(db_path) as conn:
         conn.execute(_CREATE_TABLE)
+        conn.execute(_CREATE_RATES_TABLE)
         conn.execute("DELETE FROM transactions WHERE amount IS NULL OR amount = '' OR amount = 'N/A'")
 
 
@@ -159,6 +168,43 @@ def update_transaction(key: dict, patch: dict, db_path: Path = DEFAULT_DB) -> in
             params,
         )
         return cur.rowcount
+
+
+def save_eur_rates(rates: dict, date: str = None, db_path: Path = DEFAULT_DB) -> None:
+    """Persist an exchange-rate snapshot for the given date (defaults to today)."""
+    import json
+    import datetime as dt
+    if date is None:
+        date = dt.date.today().isoformat()
+    init_db(db_path)
+    with _connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO exchange_rate_snapshots (date, rates_json, saved_at)
+            VALUES (?, ?, datetime('now'))
+            ON CONFLICT(date) DO UPDATE
+                SET rates_json = excluded.rates_json,
+                    saved_at   = excluded.saved_at
+            """,
+            (date, json.dumps(rates)),
+        )
+
+
+def get_eur_rates(date: str = None, db_path: Path = DEFAULT_DB) -> dict:
+    """Return the stored rate snapshot for a date, or the most recent one if omitted."""
+    import json
+    if not db_path.exists():
+        return {}
+    with _connect(db_path) as conn:
+        if date:
+            row = conn.execute(
+                "SELECT rates_json FROM exchange_rate_snapshots WHERE date = ?", (date,)
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT rates_json FROM exchange_rate_snapshots ORDER BY date DESC LIMIT 1"
+            ).fetchone()
+    return json.loads(row[0]) if row else {}
 
 
 def get_stats(db_path: Path = DEFAULT_DB) -> dict:
