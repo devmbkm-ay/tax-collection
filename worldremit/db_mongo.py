@@ -65,11 +65,14 @@ def save_transactions(transactions: List[WorldRemitTransaction]) -> int:
 def load_transactions(
     recipient_name: Optional[str] = None,
     start_year: Optional[int] = None,
+    start_month: int = 1,
     end_year: Optional[int] = None,
+    end_month: int = 12,
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[List[WorldRemitTransaction], int]:
     """Return (transactions, total_count) for the requested page."""
+    import calendar
     coll = _collection()
     query: dict = {}
 
@@ -78,9 +81,10 @@ def load_transactions(
 
     sort_key_filter: dict = {}
     if start_year:
-        sort_key_filter["$gte"] = f"{start_year}-01-01"
+        sort_key_filter["$gte"] = f"{start_year}-{start_month:02d}-01"
     if end_year:
-        sort_key_filter["$lte"] = f"{end_year}-12-31"
+        last_day = calendar.monthrange(end_year, end_month)[1]
+        sort_key_filter["$lte"] = f"{end_year}-{end_month:02d}-{last_day}"
     if sort_key_filter:
         query["sort_key"] = sort_key_filter
 

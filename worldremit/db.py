@@ -85,7 +85,9 @@ def load_transactions(
     db_path: Path = DEFAULT_DB,
     recipient_name: Optional[str] = None,
     start_year: Optional[int] = None,
+    start_month: int = 1,
     end_year: Optional[int] = None,
+    end_month: int = 12,
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[List[WorldRemitTransaction], int]:
@@ -93,6 +95,7 @@ def load_transactions(
     Load a page of transactions with optional filters.
     Returns (transactions, total_count).
     """
+    import calendar
     if not db_path.exists():
         return [], 0
 
@@ -104,10 +107,11 @@ def load_transactions(
         params.append(recipient_name)
     if start_year:
         where += " AND sort_key >= ?"
-        params.append(f"{start_year}-01-01")
+        params.append(f"{start_year}-{start_month:02d}-01")
     if end_year:
+        last_day = calendar.monthrange(end_year, end_month)[1]
         where += " AND sort_key <= ?"
-        params.append(f"{end_year}-12-31")
+        params.append(f"{end_year}-{end_month:02d}-{last_day}")
 
     with _connect(db_path) as conn:
         total = conn.execute(

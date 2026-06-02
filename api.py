@@ -55,7 +55,9 @@ class ExtractRequest(BaseModel):
     recipient_name: Optional[str] = None      # single name (legacy / optional)
     recipient_names: Optional[List[str]] = None  # multiple names
     start_year: int
+    start_month: int = 1
     end_year: int
+    end_month: int = 12
     lang: str = "fr"
 
 
@@ -131,6 +133,8 @@ async def extract_stream(req: ExtractRequest):
             transactions = client.fetch_transactions(
                 names, req.start_year, req.end_year, eur_rates,
                 on_progress=emit,
+                start_month=req.start_month,
+                end_month=req.end_month,
             )
             client.disconnect()
 
@@ -298,7 +302,9 @@ async def patch_transaction(req: UpdateTransactionRequest):
 async def get_transactions(
     recipient_name: Optional[str] = None,
     start_year: Optional[int] = None,
+    start_month: int = 1,
     end_year: Optional[int] = None,
+    end_month: int = 12,
     page: int = 1,
     page_size: int = 20,
 ):
@@ -307,7 +313,9 @@ async def get_transactions(
     txns, total = load_transactions(
         recipient_name=recipient_name,
         start_year=start_year,
+        start_month=start_month,
         end_year=end_year,
+        end_month=end_month,
         page=page,
         page_size=page_size,
     )

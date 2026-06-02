@@ -97,6 +97,32 @@ const AInput = ({ label, value, onChange, type = "text", placeholder, hint, tool
   </label>
 );
 
+const MONTH_NAMES_FR = ["Jan", "Fév", "Mar", "Avr", "Mai", "Jun", "Jul", "Aoû", "Sep", "Oct", "Nov", "Déc"];
+const MONTH_NAMES_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+const AMonthYear = ({ label, month, year, onMonth, onYear, lang }: {
+  label: string; month: number; year: number;
+  onMonth: (m: number) => void; onYear: (y: number) => void; lang: Lang;
+}) => {
+  const months = lang === "fr" ? MONTH_NAMES_FR : MONTH_NAMES_EN;
+  const sel: React.CSSProperties = {
+    background: A.bg, border: "1px solid " + A.line, borderRadius: 8,
+    padding: "11px 10px", fontFamily: SANS, fontSize: 14, color: A.ink, outline: "none",
+  };
+  return (
+    <label style={{ display: "block" }}>
+      <div style={{ fontFamily: MONO, fontSize: 10, color: A.muted, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 6 }}>{label}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 80px", gap: 6 }}>
+        <select value={month} onChange={e => onMonth(Number(e.target.value))} style={sel}>
+          {months.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+        </select>
+        <input type="number" value={year} onChange={e => onYear(Number(e.target.value))}
+          style={{ ...sel, padding: "11px 8px" }} />
+      </div>
+    </label>
+  );
+};
+
 // ── Provider onboarding ───────────────────────────────────────────────────────
 interface ProviderInfo {
   name: string; icon: string; link: string;
@@ -357,13 +383,15 @@ function SourceCard({ num, tag, title, desc, onClick, primary = false }: {
 // ── Email form ────────────────────────────────────────────────────────────────
 function ScreenEmail({ T, go, lang, onExtract }: {
   T: Translation; go: (s: string) => void; lang: Lang;
-  onExtract: (vals: { email: string; password: string; recipient_names: string[]; start_year: number; end_year: number }) => void;
+  onExtract: (vals: { email: string; password: string; recipient_names: string[]; start_year: number; start_month: number; end_year: number; end_month: number }) => void;
 }) {
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [recipients, setRecipients] = useState<string[]>([""]);
-  const [startYear, setStartYear] = useState(String(new Date().getFullYear() - 1));
-  const [endYear, setEndYear] = useState(String(new Date().getFullYear() - 1));
+  const [startYear, setStartYear] = useState(new Date().getFullYear() - 1);
+  const [startMonth, setStartMonth] = useState(1);
+  const [endYear, setEndYear] = useState(new Date().getFullYear() - 1);
+  const [endMonth, setEndMonth] = useState(12);
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "ok" | "error">("idle");
   const [testMsg, setTestMsg] = useState("");
 
@@ -386,7 +414,7 @@ function ScreenEmail({ T, go, lang, onExtract }: {
 
   const submit = () => {
     if (!email || !pw) return;
-    onExtract({ email, password: pw, recipient_names: recipients.map(r => r.trim()), start_year: Number(startYear), end_year: Number(endYear) });
+    onExtract({ email, password: pw, recipient_names: recipients.map(r => r.trim()), start_year: startYear, start_month: startMonth, end_year: endYear, end_month: endMonth });
   };
 
   return (
@@ -464,8 +492,8 @@ function ScreenEmail({ T, go, lang, onExtract }: {
               </button>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <AInput label={lang === "fr" ? "De" : "From"} value={startYear} onChange={setStartYear} />
-              <AInput label={lang === "fr" ? "À" : "To"} value={endYear} onChange={setEndYear} />
+              <AMonthYear label={lang === "fr" ? "De" : "From"} month={startMonth} year={startYear} onMonth={setStartMonth} onYear={setStartYear} lang={lang} />
+              <AMonthYear label={lang === "fr" ? "À" : "To"} month={endMonth} year={endYear} onMonth={setEndMonth} onYear={setEndYear} lang={lang} />
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
               <Btn kind="accent" onClick={submit}>{T.cta_connect} →</Btn>
@@ -788,15 +816,20 @@ function Kpi({ label, value, accent = false }: { label: string; value: string; a
 }
 
 // ── PDF / Downloads ────────────────────────────────────────────────────────────
-function ScreenPdf({ T, go, lang, transactions, eurRates, recipientNames, startYear, endYear, onToast }: {
+function ScreenPdf({ T, go, lang, transactions, eurRates, recipientNames, startYear, startMonth, endYear, endMonth, onToast }: {
   T: Translation; go: (s: string) => void; lang: Lang;
   transactions: Transaction[]; eurRates: Record<string, number>;
-  recipientNames: string[]; startYear: number; endYear: number;
+  recipientNames: string[]; startYear: number; startMonth: number; endYear: number; endMonth: number;
   onToast: (kind: ToastKind, message: string) => void;
 }) {
   const s = summarize(transactions);
   const [loading, setLoading] = useState<string | null>(null);
-  const period = startYear === endYear ? String(startYear) : `${startYear}–${endYear}`;
+  const months = lang === "fr" ? MONTH_NAMES_FR : MONTH_NAMES_EN;
+  const startLabel = `${months[startMonth - 1]} ${startYear}`;
+  const endLabel = `${months[endMonth - 1]} ${endYear}`;
+  const period = (startYear === endYear && startMonth === 1 && endMonth === 12)
+    ? String(startYear)
+    : startLabel === endLabel ? startLabel : `${startLabel} – ${endLabel}`;
   const recipientLabel = recipientNames.filter(Boolean).join(", ") || "—";
   const payload = { transactions, eur_rates: eurRates, recipient_name: recipientLabel, start_year: startYear, end_year: endYear, lang };
 
@@ -881,7 +914,7 @@ export default function AtlasTheme() {
   const [eurRates, setEurRates] = useState<Record<string, number>>({});
   const [saved, setSaved] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [formMeta, setFormMeta] = useState({ recipientNames: [] as string[], startYear: 2024, endYear: 2024 });
+  const [formMeta, setFormMeta] = useState({ recipientNames: [] as string[], startYear: 2024, startMonth: 1, endYear: 2024, endMonth: 12 });
   const [extractStep, setExtractStep] = useState<string>("");
   const [extractMeta, setExtractMeta] = useState<Pick<ExtractionEvent, "found" | "current" | "total">>({});
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -896,8 +929,8 @@ export default function AtlasTheme() {
 
   const go = (s: string) => { setError(null); setScreen(s); };
 
-  const handleExtract = async (vals: { email: string; password: string; recipient_names: string[]; start_year: number; end_year: number }) => {
-    setFormMeta({ recipientNames: vals.recipient_names, startYear: vals.start_year, endYear: vals.end_year });
+  const handleExtract = async (vals: { email: string; password: string; recipient_names: string[]; start_year: number; start_month: number; end_year: number; end_month: number }) => {
+    setFormMeta({ recipientNames: vals.recipient_names, startYear: vals.start_year, startMonth: vals.start_month, endYear: vals.end_year, endMonth: vals.end_month });
     setExtractStep("connecting");
     setExtractMeta({});
     setScreen("loading");
@@ -962,7 +995,7 @@ export default function AtlasTheme() {
         )}
         {screen === "pdf" && (
           <ScreenPdf T={T} go={go} lang={lang} transactions={transactions} eurRates={eurRates}
-            recipientNames={formMeta.recipientNames} startYear={formMeta.startYear} endYear={formMeta.endYear}
+            recipientNames={formMeta.recipientNames} startYear={formMeta.startYear} startMonth={formMeta.startMonth} endYear={formMeta.endYear} endMonth={formMeta.endMonth}
             onToast={addToast} />
         )}
       </main>

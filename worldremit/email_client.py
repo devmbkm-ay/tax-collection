@@ -137,15 +137,20 @@ class EmailClient:
     # Search & fetch
     # ------------------------------------------------------------------
 
-    def search(self, recipient_name: Optional[str], start_year: int, end_year: int) -> List[bytes]:
+    def search(self, recipient_name: Optional[str], start_year: int, start_month: int, end_year: int, end_month: int) -> List[bytes]:
         """Return IMAP message IDs matching the WorldRemit + date criteria.
         When recipient_name is provided it is added as a BODY filter for speed."""
+        _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        since = f"01-{_MONTHS[start_month - 1]}-{start_year}"
+        next_month, next_year = (end_month % 12) + 1, end_year + (1 if end_month == 12 else 0)
+        before = f"01-{_MONTHS[next_month - 1]}-{next_year}"
         try:
             self._imap.select('INBOX')
             body_filter = f'BODY "{recipient_name}" ' if recipient_name else ''
             criteria = (
                 f'(FROM "worldremit" {body_filter}'
-                f'SINCE "01-Jan-{start_year}" BEFORE "01-Jan-{end_year + 1}")'
+                f'SINCE "{since}" BEFORE "{before}")'
             )
             print(f"Searching: {criteria}")
             status, data = self._imap.search(None, criteria)
@@ -180,6 +185,8 @@ class EmailClient:
         end_year: int,
         eur_rates: dict,
         on_progress=None,
+        start_month: int = 1,
+        end_month: int = 12,
     ) -> List[WorldRemitTransaction]:
         """
         Search, fetch and deduplicate all WorldRemit transactions for one or
@@ -192,7 +199,7 @@ class EmailClient:
         all_ids: List[bytes] = []
         seen_ids: set = set()
         for name in recipient_names:
-            for eid in self.search(name, start_year, end_year):
+            for eid in self.search(name, start_year, start_month, end_year, end_month):
                 if eid not in seen_ids:
                     seen_ids.add(eid)
                     all_ids.append(eid)
@@ -217,8 +224,12 @@ class EmailClient:
             raw_date = msg['Date']
 
             try:
+                import calendar as _cal
                 formatted_date, sort_key, year = parse_email_date(raw_date)
-                if not (start_year <= year <= end_year):
+                last_day = _cal.monthrange(end_year, end_month)[1]
+                start_date = f"{start_year}-{start_month:02d}-01"
+                end_date = f"{end_year}-{end_month:02d}-{last_day:02d}"
+                if not (start_date <= sort_key <= end_date):
                     continue
             except Exception:
                 formatted_date, sort_key = raw_date, raw_date
