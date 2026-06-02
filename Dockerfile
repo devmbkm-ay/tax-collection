@@ -8,9 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir \
-    fastapi uvicorn[standard] python-multipart pymongo python-dotenv \
-    reportlab python-dateutil beautifulsoup4 lxml secure-smtplib
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY worldremit/ ./worldremit/
 COPY api.py .
