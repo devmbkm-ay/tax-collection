@@ -21,6 +21,18 @@ const DISPLAY = `'Bricolage Grotesque','Plus Jakarta Sans',system-ui,sans-serif`
 const SANS = `'Plus Jakarta Sans',ui-sans-serif,system-ui,sans-serif`;
 const MONO = `'JetBrains Mono',ui-monospace,monospace`;
 
+// ── Responsive hook ───────────────────────────────────────────────────────────
+function useIsMobile(bp = 768) {
+  const [mobile, setMobile] = useState(false);
+  useEffect(() => {
+    const check = () => setMobile(window.innerWidth < bp);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, [bp]);
+  return mobile;
+}
+
 // ── Tiny atoms ───────────────────────────────────────────────────────────────
 const Dot = ({ color = A.accent }: { color?: string }) => (
   <span style={{ width: 6, height: 6, borderRadius: 99, background: color, display: "inline-block" }} />
@@ -49,10 +61,10 @@ const Btn = ({ children, onClick, kind = "primary", size = "md", style = {}, dis
   return (
     <button onClick={onClick} disabled={disabled} style={{
       ...(s[kind] || s.primary),
-      padding: size === "sm" ? "7px 12px" : "10px 18px",
+      padding: size === "sm" ? "9px 14px" : "11px 18px",
       borderRadius: 8, fontFamily: SANS, fontWeight: 600,
       fontSize: size === "sm" ? 12 : 13, cursor: disabled ? "default" : "pointer",
-      letterSpacing: -0.1, opacity: disabled ? 0.5 : 1, ...style,
+      letterSpacing: -0.1, opacity: disabled ? 0.5 : 1, minHeight: 44, ...style,
     }}>{children}</button>
   );
 };
@@ -89,9 +101,9 @@ const AInput = ({ label, value, onChange, type = "text", placeholder, hint, tool
       {tooltip && <Tooltip text={tooltip} />}
     </div>
     <input value={value} type={type} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} style={{
-      width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid " + A.line,
+      width: "100%", padding: "12px 14px", borderRadius: 10, border: "1px solid " + A.line,
       background: A.bg, fontFamily: SANS, fontSize: 14, color: A.ink, outline: "none",
-      boxSizing: "border-box",
+      boxSizing: "border-box", minHeight: 44,
     }} />
     {hint && <div style={{ fontSize: 11.5, color: A.muted, marginTop: 6 }}>{hint}</div>}
   </label>
@@ -107,7 +119,7 @@ const AMonthYear = ({ label, month, year, onMonth, onYear, lang }: {
   const months = lang === "fr" ? MONTH_NAMES_FR : MONTH_NAMES_EN;
   const sel: React.CSSProperties = {
     background: A.bg, border: "1px solid " + A.line, borderRadius: 8,
-    padding: "11px 10px", fontFamily: SANS, fontSize: 14, color: A.ink, outline: "none",
+    padding: "11px 10px", fontFamily: SANS, fontSize: 14, color: A.ink, outline: "none", minHeight: 44,
   };
   return (
     <label style={{ display: "block" }}>
@@ -131,8 +143,8 @@ const AAutocomplete = ({ value, onChange, suggestions, placeholder, style }: {
   const matches = suggestions.filter(s => s.toLowerCase().includes(value.toLowerCase()) && s !== value);
   const inputStyle: React.CSSProperties = {
     flex: 1, background: A.bg, border: "1px solid " + A.line, borderRadius: 8,
-    padding: "8px 10px", fontFamily: SANS, fontSize: 13, color: A.ink, outline: "none",
-    ...style,
+    padding: "10px 10px", fontFamily: SANS, fontSize: 13, color: A.ink, outline: "none",
+    minHeight: 44, ...style,
   };
   return (
     <div style={{ position: "relative", flex: 1 }}>
@@ -155,7 +167,7 @@ const AAutocomplete = ({ value, onChange, suggestions, placeholder, style }: {
               key={s}
               onMouseDown={() => { onChange(s); setOpen(false); }}
               style={{
-                padding: "9px 12px", fontFamily: SANS, fontSize: 13, color: A.ink,
+                padding: "11px 12px", fontFamily: SANS, fontSize: 13, color: A.ink,
                 cursor: "pointer", borderBottom: "1px solid " + A.line,
               }}
               onMouseEnter={e => (e.currentTarget.style.background = A.surface2)}
@@ -264,18 +276,24 @@ function Tooltip({ text }: { text: string }) {
 type ToastKind = "ok" | "error" | "info";
 interface ToastItem { id: number; kind: ToastKind; message: string }
 
-function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: number) => void }) {
+function ToastStack({ toasts, onDismiss, mobile }: { toasts: ToastItem[]; onDismiss: (id: number) => void; mobile: boolean }) {
   if (!toasts.length) return null;
   const bg: Record<ToastKind, string> = { ok: A.good, error: "#C00", info: A.ink };
   return (
-    <div style={{ position: "fixed", bottom: 24, right: 24, display: "flex", flexDirection: "column-reverse", gap: 8, zIndex: 9999, pointerEvents: "none" }}>
+    <div style={{
+      position: "fixed",
+      bottom: mobile ? 12 : 24,
+      right: mobile ? 12 : 24,
+      left: mobile ? 12 : "auto",
+      display: "flex", flexDirection: "column-reverse", gap: 8, zIndex: 9999, pointerEvents: "none",
+    }}>
       {toasts.map(t => (
         <div key={t.id} style={{
           display: "flex", alignItems: "center", gap: 10,
           background: bg[t.kind], color: "#fff",
           padding: "10px 14px", borderRadius: 10,
           fontFamily: MONO, fontSize: 12, letterSpacing: 0.3, lineHeight: 1.4,
-          boxShadow: "0 4px 20px rgba(0,0,0,0.22)", maxWidth: 340,
+          boxShadow: "0 4px 20px rgba(0,0,0,0.22)", maxWidth: mobile ? "100%" : 340,
           animation: "toastIn 0.18s ease", pointerEvents: "all",
         }}>
           <span style={{ flex: 1 }}>{t.message}</span>
@@ -291,10 +309,10 @@ function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id
 }
 
 // ── Sidebar ──────────────────────────────────────────────────────────────────
-function Sidebar({ screen, go, lang, setLang }: {
-  screen: string; go: (s: string) => void; lang: Lang; setLang: (l: Lang) => void
+function Sidebar({ screen, go, lang, setLang, mobile, open, onClose }: {
+  screen: string; go: (s: string) => void; lang: Lang; setLang: (l: Lang) => void;
+  mobile: boolean; open: boolean; onClose: () => void;
 }) {
-  const T = I18N[lang];
   const items: [string, string, string][] = lang === "fr"
     ? [["start", "Importer", "01"], ["dashboard", "Aperçu", "02"], ["pdf", "Rapport", "03"]]
     : [["start", "Import", "01"], ["dashboard", "Overview", "02"], ["pdf", "Report", "03"]];
@@ -304,93 +322,139 @@ function Sidebar({ screen, go, lang, setLang }: {
     (k === "start" && ["start", "email"].includes(screen)) ||
     (k === "dashboard" && ["dashboard", "loading"].includes(screen));
 
+  const nav = (k: string) => { go(k); if (mobile) onClose(); };
+
   return (
-    <aside style={{ width: 220, background: A.surface, borderRight: "1px solid " + A.line, display: "flex", flexDirection: "column", padding: "22px 18px 18px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 32 }}>
-        <div style={{ width: 28, height: 28, borderRadius: 8, background: A.ink, display: "grid", placeItems: "center" }}>
-          <div style={{ width: 12, height: 12, background: A.accent, borderRadius: 2, transform: "rotate(45deg)" }} />
-        </div>
-        <div style={{ fontFamily: DISPLAY, fontSize: 17, fontWeight: 700, color: A.ink, letterSpacing: -0.5 }}>Atlas</div>
-      </div>
-
-      <div style={{ fontFamily: MONO, fontSize: 9.5, color: A.muted, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 10, paddingLeft: 4 }}>
-        {lang === "fr" ? "Navigation" : "Workspace"}
-      </div>
-      <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        {items.map(([k, label, n]) => {
-          const active = isActive(k);
-          return (
-            <button key={k} onClick={() => go(k)} style={{
-              display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 8,
-              background: active ? A.surface2 : "transparent", border: "1px solid " + (active ? A.line : "transparent"),
-              cursor: "pointer", fontFamily: SANS, fontSize: 13.5,
-              color: active ? A.ink : A.muted, fontWeight: active ? 600 : 500, textAlign: "left",
-            }}>
-              <span style={{ fontFamily: MONO, fontSize: 10, color: active ? A.accent : A.muted, width: 18 }}>{n}</span>
-              <span style={{ flex: 1 }}>{label}</span>
-              {active && <Dot />}
-            </button>
-          );
-        })}
-      </nav>
-
-      <div style={{ marginTop: "auto" }}>
-        <div style={{ background: A.surface2, borderRadius: 12, padding: 14, border: "1px solid " + A.line, marginBottom: 14 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-            <Dot color={A.good} />
-            <div style={{ fontSize: 10.5, fontFamily: MONO, color: A.good, letterSpacing: 1, textTransform: "uppercase", fontWeight: 600 }}>Local</div>
+    <>
+      {mobile && open && (
+        <div
+          onClick={onClose}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 999 }}
+        />
+      )}
+      <aside style={{
+        width: 220, background: A.surface, borderRight: "1px solid " + A.line,
+        display: "flex", flexDirection: "column", padding: "22px 18px 18px",
+        ...(mobile ? {
+          position: "fixed", top: 0, left: 0, height: "100vh", zIndex: 1000,
+          transform: open ? "translateX(0)" : "translateX(-100%)",
+          transition: "transform 0.25s ease",
+          boxShadow: open ? "4px 0 32px rgba(0,0,0,0.18)" : "none",
+        } : {}),
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 32 }}>
+          <div style={{ width: 28, height: 28, borderRadius: 8, background: A.ink, display: "grid", placeItems: "center" }}>
+            <div style={{ width: 12, height: 12, background: A.accent, borderRadius: 2, transform: "rotate(45deg)" }} />
           </div>
-          <div style={{ fontSize: 11.5, color: A.muted, lineHeight: 1.5 }}>
-            {lang === "fr" ? "Identifiants jamais stockés." : "Credentials never stored."}
+          <div style={{ fontFamily: DISPLAY, fontSize: 17, fontWeight: 700, color: A.ink, letterSpacing: -0.5, flex: 1 }}>Atlas</div>
+          {mobile && (
+            <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: A.muted, fontSize: 20, lineHeight: 1, padding: 4 }}>×</button>
+          )}
+        </div>
+
+        <div style={{ fontFamily: MONO, fontSize: 9.5, color: A.muted, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 10, paddingLeft: 4 }}>
+          {lang === "fr" ? "Navigation" : "Workspace"}
+        </div>
+        <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          {items.map(([k, label, n]) => {
+            const active = isActive(k);
+            return (
+              <button key={k} onClick={() => nav(k)} style={{
+                display: "flex", alignItems: "center", gap: 10, padding: "10px 10px", borderRadius: 8,
+                background: active ? A.surface2 : "transparent", border: "1px solid " + (active ? A.line : "transparent"),
+                cursor: "pointer", fontFamily: SANS, fontSize: 13.5,
+                color: active ? A.ink : A.muted, fontWeight: active ? 600 : 500, textAlign: "left",
+                minHeight: 44,
+              }}>
+                <span style={{ fontFamily: MONO, fontSize: 10, color: active ? A.accent : A.muted, width: 18 }}>{n}</span>
+                <span style={{ flex: 1 }}>{label}</span>
+                {active && <Dot />}
+              </button>
+            );
+          })}
+        </nav>
+
+        <div style={{ marginTop: "auto" }}>
+          <div style={{ background: A.surface2, borderRadius: 12, padding: 14, border: "1px solid " + A.line, marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+              <Dot color={A.good} />
+              <div style={{ fontSize: 10.5, fontFamily: MONO, color: A.good, letterSpacing: 1, textTransform: "uppercase", fontWeight: 600 }}>Local</div>
+            </div>
+            <div style={{ fontSize: 11.5, color: A.muted, lineHeight: 1.5 }}>
+              {lang === "fr" ? "Identifiants jamais stockés." : "Credentials never stored."}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 4, background: A.surface2, padding: 3, borderRadius: 99, border: "1px solid " + A.line }}>
+            {(["fr", "en"] as Lang[]).map((l) => (
+              <button key={l} onClick={() => setLang(l)} style={{
+                flex: 1, border: "none", padding: "6px 10px", borderRadius: 99, cursor: "pointer",
+                background: lang === l ? A.ink : "transparent",
+                color: lang === l ? A.bg : A.muted,
+                fontFamily: MONO, fontWeight: 700, fontSize: 10, letterSpacing: 1, minHeight: 36,
+              }}>{l.toUpperCase()}</button>
+            ))}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 4, background: A.surface2, padding: 3, borderRadius: 99, border: "1px solid " + A.line }}>
-          {(["fr", "en"] as Lang[]).map((l) => (
-            <button key={l} onClick={() => setLang(l)} style={{
-              flex: 1, border: "none", padding: "5px 10px", borderRadius: 99, cursor: "pointer",
-              background: lang === l ? A.ink : "transparent",
-              color: lang === l ? A.bg : A.muted,
-              fontFamily: MONO, fontWeight: 700, fontSize: 10, letterSpacing: 1,
-            }}>{l.toUpperCase()}</button>
-          ))}
-        </div>
-      </div>
-    </aside>
+      </aside>
+    </>
   );
 }
 
 // ── Page header ───────────────────────────────────────────────────────────────
-function PageHeader({ eyebrow, title, sub, right }: {
-  eyebrow: string; title: React.ReactNode; sub?: string; right?: React.ReactNode
+function PageHeader({ eyebrow, title, sub, right, mobile, onMenuOpen }: {
+  eyebrow: string; title: React.ReactNode; sub?: string; right?: React.ReactNode;
+  mobile: boolean; onMenuOpen: () => void;
 }) {
   return (
-    <header style={{ padding: "32px 40px 24px", borderBottom: "1px solid " + A.line, background: A.bg }}>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 32 }}>
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-            <Dot />
-            <span style={{ fontFamily: MONO, fontSize: 10.5, color: A.muted, letterSpacing: 1.5, textTransform: "uppercase" }}>{eyebrow}</span>
+    <header style={{ padding: mobile ? "14px 16px 12px" : "32px 40px 24px", borderBottom: "1px solid " + A.line, background: A.bg, flexShrink: 0 }}>
+      {mobile ? (
+        <>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <button onClick={onMenuOpen} style={{
+              background: "none", border: "none", cursor: "pointer", padding: 6,
+              display: "flex", flexDirection: "column", gap: 4,
+            }}>
+              {[0, 1, 2].map(i => <div key={i} style={{ width: 20, height: 2, background: A.ink, borderRadius: 1 }} />)}
+            </button>
+            {right ?? <div />}
           </div>
-          <h1 style={{ fontFamily: DISPLAY, fontSize: 44, fontWeight: 600, color: A.ink, margin: 0, lineHeight: 1.05, letterSpacing: -1.2 }}>{title}</h1>
-          {sub && <p style={{ fontSize: 14, color: A.muted, marginTop: 12, maxWidth: 520, lineHeight: 1.55 }}>{sub}</p>}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+            <Dot />
+            <span style={{ fontFamily: MONO, fontSize: 10, color: A.muted, letterSpacing: 1.5, textTransform: "uppercase" }}>{eyebrow}</span>
+          </div>
+          <h1 style={{ fontFamily: DISPLAY, fontSize: 28, fontWeight: 600, color: A.ink, margin: 0, lineHeight: 1.1, letterSpacing: -0.5 }}>{title}</h1>
+          {sub && <p style={{ fontSize: 13, color: A.muted, marginTop: 8, lineHeight: 1.55 }}>{sub}</p>}
+        </>
+      ) : (
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 32 }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <Dot />
+              <span style={{ fontFamily: MONO, fontSize: 10.5, color: A.muted, letterSpacing: 1.5, textTransform: "uppercase" }}>{eyebrow}</span>
+            </div>
+            <h1 style={{ fontFamily: DISPLAY, fontSize: 44, fontWeight: 600, color: A.ink, margin: 0, lineHeight: 1.05, letterSpacing: -1.2 }}>{title}</h1>
+            {sub && <p style={{ fontSize: 14, color: A.muted, marginTop: 12, maxWidth: 520, lineHeight: 1.55 }}>{sub}</p>}
+          </div>
+          {right}
         </div>
-        {right}
-      </div>
+      )}
     </header>
   );
 }
 
 // ── Start screen ──────────────────────────────────────────────────────────────
-function ScreenStart({ T, go, lang }: { T: Translation; go: (s: string) => void; lang: Lang }) {
+function ScreenStart({ T, go, lang, mobile, onMenuOpen }: { T: Translation; go: (s: string) => void; lang: Lang; mobile: boolean; onMenuOpen: () => void }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
       <PageHeader
         eyebrow={lang === "fr" ? "Étape 01 · Import" : "Step 01 · Import"}
         title={<>{T.import_title}<span style={{ color: A.accent }}>.</span></>}
         sub={T.import_sub}
+        mobile={mobile}
+        onMenuOpen={onMenuOpen}
       />
-      <div style={{ padding: "28px 40px 32px", display: "flex", flexDirection: "column", gap: 22, flex: 1 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
+      <div style={{ padding: mobile ? "16px 16px 20px" : "28px 40px 32px", display: "flex", flexDirection: "column", gap: 22, flex: 1, overflow: "auto" }}>
+        <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "repeat(3, 1fr)", gap: 14 }}>
           <SourceCard num="01" tag="IMAP" title={T.method_email} desc={T.method_email_d} onClick={() => go("email")} primary />
           <SourceCard num="02" tag="JSON" title={T.method_json} desc={T.method_json_d} onClick={() => { }} />
           <SourceCard num="03" tag=".EML" title={T.method_eml} desc={T.method_eml_d} onClick={() => { }} />
@@ -428,8 +492,8 @@ function SourceCard({ num, tag, title, desc, onClick, primary = false }: {
 }
 
 // ── Email form ────────────────────────────────────────────────────────────────
-function ScreenEmail({ T, go, lang, onExtract }: {
-  T: Translation; go: (s: string) => void; lang: Lang;
+function ScreenEmail({ T, go, lang, onExtract, mobile, onMenuOpen }: {
+  T: Translation; go: (s: string) => void; lang: Lang; mobile: boolean; onMenuOpen: () => void;
   onExtract: (vals: { email: string; password: string; recipient_names: string[]; start_year: number; start_month: number; end_year: number; end_month: number }) => void;
 }) {
   const [email, setEmail] = useState("");
@@ -474,9 +538,18 @@ function ScreenEmail({ T, go, lang, onExtract }: {
         title={lang === "fr" ? "Connecter votre messagerie" : "Connect your inbox"}
         sub={lang === "fr" ? "Lecture en lecture seule. Identifiants jamais transmis." : "Read-only access. Credentials never transmitted."}
         right={<Btn kind="ghost" size="sm" onClick={() => go("start")}>← {T.cta_back}</Btn>}
+        mobile={mobile}
+        onMenuOpen={onMenuOpen}
       />
-      <div style={{ padding: "26px 40px", flex: 1, display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: 32, alignItems: "flex-start" }}>
-        <div style={{ background: A.surface, border: "1px solid " + A.line, borderRadius: 16, padding: 28 }}>
+      <div style={{
+        padding: mobile ? "16px" : "26px 40px",
+        flex: 1, overflow: "auto",
+        display: "grid",
+        gridTemplateColumns: mobile ? "1fr" : "1.1fr 1fr",
+        gap: mobile ? 16 : 32,
+        alignItems: "flex-start",
+      }}>
+        <div style={{ background: A.surface, border: "1px solid " + A.line, borderRadius: 16, padding: mobile ? 18 : 28 }}>
           <div style={{ fontFamily: MONO, fontSize: 10.5, color: A.muted, letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 14 }}>
             {lang === "fr" ? "Identifiants" : "Credentials"}
           </div>
@@ -498,12 +571,13 @@ function ScreenEmail({ T, go, lang, onExtract }: {
                 style={{
                   background: "none",
                   border: "1px solid " + (testStatus === "ok" ? A.good : testStatus === "error" ? "#C00" : A.line),
-                  borderRadius: 8, padding: "8px 14px", textAlign: "left",
+                  borderRadius: 8, padding: "10px 14px", textAlign: "left",
                   fontFamily: MONO, fontSize: 11, letterSpacing: 0.5,
                   color: testStatus === "ok" ? A.good : testStatus === "error" ? "#C00" : A.ink,
                   cursor: (!email || !pw || testStatus === "testing") ? "default" : "pointer",
                   opacity: (!email || !pw) ? 0.4 : 1,
                   transition: "border-color 0.15s, color 0.15s",
+                  minHeight: 44,
                 }}
               >
                 {testStatus === "testing"
@@ -536,7 +610,7 @@ function ScreenEmail({ T, go, lang, onExtract }: {
                     placeholder={i === 0 ? (lang === "fr" ? "Optionnel — détecté automatiquement" : "Optional — auto-detected") : (lang === "fr" ? "Autre bénéficiaire" : "Another recipient")}
                   />
                   {recipients.length > 1 && (
-                    <button onClick={() => removeRecipient(i)} style={{ background: "none", border: "1px solid " + A.line, borderRadius: 8, padding: "0 10px", cursor: "pointer", color: A.muted, fontFamily: MONO, fontSize: 14 }}>×</button>
+                    <button onClick={() => removeRecipient(i)} style={{ background: "none", border: "1px solid " + A.line, borderRadius: 8, padding: "0 12px", cursor: "pointer", color: A.muted, fontFamily: MONO, fontSize: 14, minHeight: 44 }}>×</button>
                   )}
                 </div>
               ))}
@@ -548,7 +622,7 @@ function ScreenEmail({ T, go, lang, onExtract }: {
               <AMonthYear label={lang === "fr" ? "De" : "From"} month={startMonth} year={startYear} onMonth={setStartMonth} onYear={setStartYear} lang={lang} />
               <AMonthYear label={lang === "fr" ? "À" : "To"} month={endMonth} year={endYear} onMonth={setEndMonth} onYear={setEndYear} lang={lang} />
             </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+            <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
               <Btn kind="accent" onClick={submit}>{T.cta_connect} →</Btn>
               <Btn kind="ghost" onClick={() => go("start")}>{T.cta_back}</Btn>
             </div>
@@ -601,7 +675,7 @@ function ScreenLoading({ lang, step, meta }: {
   const activeIdx = STEP_IDX[step] ?? -1;
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 40px" }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "32px 16px" }}>
       <div style={{ width: "100%", maxWidth: 340 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 24 }}>
           {EXTRACT_STEPS.map((s, idx) => {
@@ -667,8 +741,8 @@ function ScreenLoading({ lang, step, meta }: {
 // ── Error ──────────────────────────────────────────────────────────────────────
 function ScreenError({ message, onBack }: { message: string; onBack: () => void }) {
   return (
-    <div style={{ flex: 1, display: "grid", placeItems: "center", padding: 48 }}>
-      <div style={{ background: A.surface, border: "1px solid " + A.line, borderRadius: 16, padding: 32, maxWidth: 480, textAlign: "center" }}>
+    <div style={{ flex: 1, display: "grid", placeItems: "center", padding: 24 }}>
+      <div style={{ background: A.surface, border: "1px solid " + A.line, borderRadius: 16, padding: 32, maxWidth: 480, textAlign: "center", width: "100%" }}>
         <div style={{ fontSize: 32, marginBottom: 12 }}>⚠️</div>
         <div style={{ fontFamily: DISPLAY, fontSize: 20, color: A.ink, marginBottom: 12 }}>Erreur</div>
         <div style={{ fontSize: 14, color: A.muted, marginBottom: 20 }}>{message}</div>
@@ -684,11 +758,12 @@ const A_PAGE_SIZE = 20;
 type TxKey = { sort_key: string; amount: string; currency: string; transaction_number: string };
 type EditableField = "recipient_name" | "country" | "amount_eur";
 
-function Dashboard({ T, go, lang, transactions, saved, onUpdate, onToast }: {
+function Dashboard({ T, go, lang, transactions, saved, onUpdate, onToast, mobile, onMenuOpen }: {
   T: Translation; go: (s: string) => void; lang: Lang;
   transactions: Transaction[]; saved: number;
   onUpdate: (key: TxKey, patch: Partial<Record<EditableField, string>>) => Promise<void>;
   onToast: (kind: ToastKind, message: string) => void;
+  mobile: boolean; onMenuOpen: () => void;
 }) {
   const [txPage, setTxPage] = useState(1);
   const [editing, setEditing] = useState<(TxKey & { field: EditableField; value: string }) | null>(null);
@@ -761,20 +836,22 @@ function Dashboard({ T, go, lang, transactions, saved, onUpdate, onToast }: {
         eyebrow={lang === "fr" ? "Résultats de l'extraction" : "Extraction results"}
         title={lang === "fr" ? "Aperçu des transactions" : "Transactions overview"}
         right={<Btn kind="accent" onClick={() => go("pdf")}>{T.cta_export} →</Btn>}
+        mobile={mobile}
+        onMenuOpen={onMenuOpen}
       />
-      <div style={{ padding: "24px 40px", display: "flex", flexDirection: "column", gap: 18, flex: 1, overflow: "auto" }}>
+      <div style={{ padding: mobile ? "14px 16px" : "24px 40px", display: "flex", flexDirection: "column", gap: 14, flex: 1, overflow: "auto" }}>
         {saved > 0 && (
           <div style={{ background: A.accentSoft, border: "1px solid " + A.accent, borderRadius: 10, padding: "10px 16px", fontSize: 13, color: A.ink }}>
             <Tag color={A.good} bg="transparent">✓</Tag> {T.saved(saved)}
           </div>
         )}
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "2fr 1fr 1fr 1fr", gap: 10 }}>
           <Kpi label={T.total_eur} value={formatEUR(s.totalEur)} accent />
           <Kpi label={T.transfers} value={String(s.count)} />
           <Kpi label={T.recipients} value={String(recipients.length)} />
           <Kpi label={T.countries} value={String(countries.length)} />
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1.3fr 1fr", gap: 14 }}>
           <APanel title={T.by_country}>
             <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 14 }}>
               {countries.map(([c, v]) => {
@@ -839,12 +916,12 @@ function Dashboard({ T, go, lang, transactions, saved, onUpdate, onToast }: {
           {totalPages > 1 && (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 12, marginTop: 14, fontFamily: MONO, fontSize: 12 }}>
               <button onClick={() => setTxPage(p => Math.max(1, p - 1))} disabled={txPage === 1}
-                style={{ background: "none", border: "1px solid " + A.line, borderRadius: 6, padding: "5px 12px", cursor: txPage === 1 ? "default" : "pointer", color: txPage === 1 ? A.muted : A.ink, fontFamily: MONO, fontSize: 12 }}>
+                style={{ background: "none", border: "1px solid " + A.line, borderRadius: 6, padding: "8px 14px", cursor: txPage === 1 ? "default" : "pointer", color: txPage === 1 ? A.muted : A.ink, fontFamily: MONO, fontSize: 12, minHeight: 44 }}>
                 ←
               </button>
               <span style={{ color: A.muted }}>{txPage} / {totalPages}</span>
               <button onClick={() => setTxPage(p => Math.min(totalPages, p + 1))} disabled={txPage === totalPages}
-                style={{ background: "none", border: "1px solid " + A.line, borderRadius: 6, padding: "5px 12px", cursor: txPage === totalPages ? "default" : "pointer", color: txPage === totalPages ? A.muted : A.ink, fontFamily: MONO, fontSize: 12 }}>
+                style={{ background: "none", border: "1px solid " + A.line, borderRadius: 6, padding: "8px 14px", cursor: txPage === totalPages ? "default" : "pointer", color: txPage === totalPages ? A.muted : A.ink, fontFamily: MONO, fontSize: 12, minHeight: 44 }}>
                 →
               </button>
             </div>
@@ -859,21 +936,22 @@ function Kpi({ label, value, accent = false }: { label: string; value: string; a
   return (
     <div style={{
       background: accent ? A.ink : A.surface, color: accent ? A.bg : A.ink,
-      border: "1px solid " + (accent ? A.ink : A.line), borderRadius: 14, padding: "18px 20px",
-      display: "flex", flexDirection: "column", justifyContent: "space-between", minHeight: 110,
+      border: "1px solid " + (accent ? A.ink : A.line), borderRadius: 14, padding: "16px 18px",
+      display: "flex", flexDirection: "column", justifyContent: "space-between", minHeight: 100,
     }}>
-      <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: 1.5, textTransform: "uppercase", color: accent ? "rgba(255,255,255,0.6)" : A.muted }}>{label}</div>
-      <div style={{ fontFamily: DISPLAY, fontSize: accent ? 42 : 32, fontWeight: 600, letterSpacing: -1.2, marginTop: 8 }}>{value}</div>
+      <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: accent ? "rgba(255,255,255,0.6)" : A.muted }}>{label}</div>
+      <div style={{ fontFamily: DISPLAY, fontSize: accent ? 36 : 28, fontWeight: 600, letterSpacing: -1, marginTop: 8 }}>{value}</div>
     </div>
   );
 }
 
 // ── PDF / Downloads ────────────────────────────────────────────────────────────
-function ScreenPdf({ T, go, lang, transactions, eurRates, recipientNames, startYear, startMonth, endYear, endMonth, onToast }: {
+function ScreenPdf({ T, go, lang, transactions, eurRates, recipientNames, startYear, startMonth, endYear, endMonth, onToast, mobile, onMenuOpen }: {
   T: Translation; go: (s: string) => void; lang: Lang;
   transactions: Transaction[]; eurRates: Record<string, number>;
   recipientNames: string[]; startYear: number; startMonth: number; endYear: number; endMonth: number;
   onToast: (kind: ToastKind, message: string) => void;
+  mobile: boolean; onMenuOpen: () => void;
 }) {
   const s = summarize(transactions);
   const [loading, setLoading] = useState<string | null>(null);
@@ -933,9 +1011,9 @@ function ScreenPdf({ T, go, lang, transactions, eurRates, recipientNames, startY
 
   const DLRow = ({ ext, name, onDl, primary = false }: { ext: string; name: string; onDl: () => void; primary?: boolean }) => (
     <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", background: primary ? A.ink : A.bg, color: primary ? A.bg : A.ink, border: "1px solid " + (primary ? A.ink : A.line), borderRadius: 10 }}>
-      <div style={{ width: 30, height: 36, background: primary ? A.accent : A.surface2, border: "1px solid " + (primary ? A.accent : A.line), borderRadius: 6, display: "grid", placeItems: "center", fontFamily: MONO, fontSize: 9, fontWeight: 700, color: A.ink }}>{ext}</div>
-      <div style={{ flex: 1, fontFamily: MONO, fontSize: 12 }}>{name}</div>
-      <button onClick={onDl} disabled={loading !== null} style={{ background: primary ? A.accent : A.ink, color: primary ? A.ink : A.bg, border: "none", padding: "5px 10px", fontFamily: MONO, fontSize: 10, cursor: "pointer", letterSpacing: 1, fontWeight: 700, borderRadius: 6 }}>↓</button>
+      <div style={{ width: 30, height: 36, background: primary ? A.accent : A.surface2, border: "1px solid " + (primary ? A.accent : A.line), borderRadius: 6, display: "grid", placeItems: "center", fontFamily: MONO, fontSize: 9, fontWeight: 700, color: A.ink, flexShrink: 0 }}>{ext}</div>
+      <div style={{ flex: 1, fontFamily: MONO, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
+      <button onClick={onDl} disabled={loading !== null} style={{ background: primary ? A.accent : A.ink, color: primary ? A.ink : A.bg, border: "none", padding: "8px 12px", fontFamily: MONO, fontSize: 10, cursor: "pointer", letterSpacing: 1, fontWeight: 700, borderRadius: 6, minHeight: 36, flexShrink: 0 }}>↓</button>
     </div>
   );
 
@@ -945,9 +1023,17 @@ function ScreenPdf({ T, go, lang, transactions, eurRates, recipientNames, startY
         eyebrow={`Rapport · ${period}`}
         title={<>{lang === "fr" ? "Prêt à exporter" : "Ready to export"}<span style={{ color: A.accent }}>.</span></>}
         right={<Btn kind="ghost" size="sm" onClick={() => go("dashboard")}>← {T.cta_back}</Btn>}
+        mobile={mobile}
+        onMenuOpen={onMenuOpen}
       />
-      <div style={{ padding: "26px 40px", display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: 18, flex: 1, overflow: "auto" }}>
-        <div style={{ background: A.surface, border: "1px solid " + A.line, borderRadius: 16, padding: 28 }}>
+      <div style={{
+        padding: mobile ? "16px" : "26px 40px",
+        display: "grid",
+        gridTemplateColumns: mobile ? "1fr" : "1.1fr 1fr",
+        gap: mobile ? 16 : 18,
+        flex: 1, overflow: "auto",
+      }}>
+        <div style={{ background: A.surface, border: "1px solid " + A.line, borderRadius: 16, padding: mobile ? 18 : 28 }}>
           <div style={{ fontFamily: MONO, fontSize: 10, color: A.muted, letterSpacing: 1.5, textTransform: "uppercase" }}>{period} · Annexe</div>
           <div style={{ fontFamily: DISPLAY, fontSize: 22, fontWeight: 600, color: A.ink, letterSpacing: -0.5, marginTop: 4 }}>
             {lang === "fr" ? "Transferts internationaux" : "International transfers"}
@@ -1024,6 +1110,8 @@ function ScreenPdf({ T, go, lang, transactions, eurRates, recipientNames, startY
 
 // ── Root component ─────────────────────────────────────────────────────────────
 export default function AtlasTheme() {
+  const mobile = useIsMobile();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [screen, setScreen] = useState("start");
   const [lang, setLang] = useState<Lang>("fr");
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -1044,6 +1132,7 @@ export default function AtlasTheme() {
   const T = I18N[lang];
 
   const go = (s: string) => { setError(null); setScreen(s); };
+  const openMenu = () => setSidebarOpen(true);
 
   const handleExtract = async (vals: { email: string; password: string; recipient_names: string[]; start_year: number; start_month: number; end_year: number; end_month: number }) => {
     setFormMeta({ recipientNames: vals.recipient_names, startYear: vals.start_year, startMonth: vals.start_month, endYear: vals.end_year, endMonth: vals.end_month });
@@ -1085,20 +1174,23 @@ export default function AtlasTheme() {
 
   return (
     <div style={{ background: A.bg, color: A.ink, fontFamily: SANS, height: "100vh", width: "100%", display: "flex", overflow: "hidden" }}>
-      <Sidebar screen={screen} go={go} lang={lang} setLang={setLang} />
-      <main style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: A.bg }}>
-        {screen === "start" && <ScreenStart T={T} go={go} lang={lang} />}
+      <Sidebar
+        screen={screen} go={go} lang={lang} setLang={setLang}
+        mobile={mobile} open={sidebarOpen} onClose={() => setSidebarOpen(false)}
+      />
+      <main style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: A.bg, minWidth: 0 }}>
+        {screen === "start" && <ScreenStart T={T} go={go} lang={lang} mobile={mobile} onMenuOpen={openMenu} />}
         {screen === "email" && (
           <>
-            {error && <div style={{ background: "#fee", borderBottom: "1px solid #fcc", padding: "10px 40px", fontSize: 13, color: "#c00" }}>⚠️ {error}</div>}
-            <ScreenEmail T={T} go={go} lang={lang} onExtract={handleExtract} />
+            {error && <div style={{ background: "#fee", borderBottom: "1px solid #fcc", padding: "10px 16px", fontSize: 13, color: "#c00", flexShrink: 0 }}>⚠️ {error}</div>}
+            <ScreenEmail T={T} go={go} lang={lang} onExtract={handleExtract} mobile={mobile} onMenuOpen={openMenu} />
           </>
         )}
         {screen === "loading" && <ScreenLoading lang={lang} step={extractStep} meta={extractMeta} />}
         {screen === "dashboard" && (
           <Dashboard
             T={T} go={go} lang={lang} transactions={transactions} saved={saved}
-            onToast={addToast}
+            onToast={addToast} mobile={mobile} onMenuOpen={openMenu}
             onUpdate={async (key, patch) => {
               await updateTransaction(key, patch);
               setTransactions(prev => prev.map(t =>
@@ -1112,10 +1204,13 @@ export default function AtlasTheme() {
         {screen === "pdf" && (
           <ScreenPdf T={T} go={go} lang={lang} transactions={transactions} eurRates={eurRates}
             recipientNames={formMeta.recipientNames} startYear={formMeta.startYear} startMonth={formMeta.startMonth} endYear={formMeta.endYear} endMonth={formMeta.endMonth}
-            onToast={addToast} />
+            onToast={addToast} mobile={mobile} onMenuOpen={openMenu} />
+        )}
+        {(screen === "error" || (!["start","email","loading","dashboard","pdf"].includes(screen) && error)) && (
+          <ScreenError message={error ?? "Erreur inconnue"} onBack={() => go("start")} />
         )}
       </main>
-      <ToastStack toasts={toasts} onDismiss={id => setToasts(prev => prev.filter(t => t.id !== id))} />
+      <ToastStack toasts={toasts} onDismiss={id => setToasts(prev => prev.filter(t => t.id !== id))} mobile={mobile} />
     </div>
   );
 }
