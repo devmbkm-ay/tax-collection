@@ -4,11 +4,13 @@ Run locally: uvicorn api:app --reload
 """
 
 import asyncio
+import io
 import json
 import os
 import queue
 import tempfile
 import threading
+import zipfile
 from dataclasses import asdict
 from pathlib import Path
 from typing import List, Optional
@@ -294,6 +296,56 @@ async def report_xlsx(req: ReportRequest):
         content=xlsx_bytes,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="transactions_{period}.xlsx"'},
+    )
+
+
+@app.post("/api/report/zip")
+async def report_zip(req: ReportRequest):
+    """Generate one PDF + CSV per unique recipient, bundled as a ZIP archive."""
+    from worldremit.models import WorldRemitTransaction
+
+    all_txns = [WorldRemitTransaction(**t) for t in req.transactions]
+
+    by_recipient: dict = {}
+    for t in all_txns:
+        key = t.recipient_name.strip() if t.recipient_name else (
+            "inconnu" if req.lang == "fr" else "unknown"
+        )
+        by_recipient.setdefault(key, []).append(t)
+
+    period = (
+        str(req.start_year)
+        if req.start_year == req.end_year
+        else f"{req.start_year}-{req.end_year}"
+    )
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, txns in by_recipient.items():
+            safe = name.replace(" ", "_").replace("/", "_")
+
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+                tmp_path = f.name
+            generate_pdf_report(
+                txns, req.eur_rates,
+                output_file=tmp_path,
+                recipient_name=name,
+                start_year=req.start_year,
+                end_year=req.end_year,
+                lang=req.lang,
+                declarant_name=req.declarant_name,
+                declarant_address=req.declarant_address,
+            )
+            zf.write(tmp_path, f"{safe}_{period}.pdf")
+            Path(tmp_path).unlink(missing_ok=True)
+
+            csv_str = export_csv(txns, lang=req.lang)
+            zf.writestr(f"{safe}_{period}.csv", csv_str.encode("utf-8-sig"))
+
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="rapports_{period}.zip"'},
     )
 
 

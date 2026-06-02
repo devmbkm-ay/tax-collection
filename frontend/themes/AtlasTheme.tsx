@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { streamExtraction, downloadPdf, downloadCsv, downloadXlsx, triggerDownload, testConnection, updateTransaction, fetchStats } from "@/lib/api";
+import { streamExtraction, downloadPdf, downloadCsv, downloadXlsx, downloadZip, triggerDownload, testConnection, updateTransaction, fetchStats } from "@/lib/api";
 import type { Transaction, ExtractionEvent } from "@/lib/types";
 import {
   type Translation,
@@ -915,6 +915,17 @@ function ScreenPdf({ T, go, lang, transactions, eurRates, recipientNames, startY
       onToast("error", lang === "fr" ? "Export Excel échoué" : "Excel export failed");
     } finally { setLoading(null); }
   };
+  const handleZip = async () => {
+    setLoading("zip");
+    try {
+      triggerDownload(await downloadZip(payload), `rapports_${period}.zip`);
+      onToast("ok", lang === "fr" ? "ZIP téléchargé" : "ZIP downloaded");
+    } catch {
+      onToast("error", lang === "fr" ? "Génération ZIP échouée" : "ZIP generation failed");
+    } finally { setLoading(null); }
+  };
+
+  const uniqueRecipients = Object.keys(s.byRecipient).filter(Boolean);
   const handleJson = () => {
     triggerDownload(new Blob([JSON.stringify(transactions, null, 2)], { type: "application/json" }), "transactions.json");
     onToast("info", "JSON téléchargé");
@@ -995,6 +1006,16 @@ function ScreenPdf({ T, go, lang, transactions, eurRates, recipientNames, startY
               <DLRow ext="JSON" name="transactions.json" onDl={handleJson} />
             </div>
           </APanel>
+          {uniqueRecipients.length >= 2 && (
+            <APanel title={lang === "fr" ? "Par bénéficiaire" : "Per recipient"}>
+              <div style={{ marginTop: 10, fontSize: 12.5, color: A.muted, marginBottom: 12 }}>
+                {lang === "fr"
+                  ? `${uniqueRecipients.length} bénéficiaires détectés — génère un PDF + CSV par personne dans une archive ZIP.`
+                  : `${uniqueRecipients.length} recipients detected — generates one PDF + CSV per person in a ZIP archive.`}
+              </div>
+              <DLRow ext="ZIP" name={`rapports_${period}.zip`} onDl={handleZip} />
+            </APanel>
+          )}
         </div>
       </div>
     </div>

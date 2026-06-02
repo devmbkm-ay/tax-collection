@@ -105,6 +105,16 @@ export async function downloadPdf(payload: ReportPayload): Promise<Blob> {
   return res.blob();
 }
 
+export async function downloadZip(payload: ReportPayload): Promise<Blob> {
+  const res = await fetch(`${BASE}/api/report/zip`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Génération ZIP échouée");
+  return res.blob();
+}
+
 export async function downloadXlsx(payload: ReportPayload): Promise<Blob> {
   const res = await fetch(`${BASE}/api/report/xlsx`, {
     method: "POST",
