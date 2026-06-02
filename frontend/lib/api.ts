@@ -105,6 +105,16 @@ export async function downloadPdf(payload: ReportPayload): Promise<Blob> {
   return res.blob();
 }
 
+export async function downloadXlsx(payload: ReportPayload): Promise<Blob> {
+  const res = await fetch(`${BASE}/api/report/xlsx`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Export Excel échoué");
+  return res.blob();
+}
+
 export async function downloadCsv(payload: ReportPayload): Promise<Blob> {
   const res = await fetch(`${BASE}/api/report/csv`, {
     method: "POST",

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { streamExtraction, downloadPdf, downloadCsv, triggerDownload, testConnection, updateTransaction, fetchStats } from "@/lib/api";
+import { streamExtraction, downloadPdf, downloadCsv, downloadXlsx, triggerDownload, testConnection, updateTransaction, fetchStats } from "@/lib/api";
 import type { Transaction, ExtractionEvent } from "@/lib/types";
 import {
   type Translation,
@@ -904,6 +904,15 @@ function ScreenPdf({ T, go, lang, transactions, eurRates, recipientNames, startY
       onToast("error", lang === "fr" ? "Export CSV échoué" : "CSV export failed");
     } finally { setLoading(null); }
   };
+  const handleXlsx = async () => {
+    setLoading("xlsx");
+    try {
+      triggerDownload(await downloadXlsx(payload), `transactions_${period}.xlsx`);
+      onToast("ok", lang === "fr" ? "Excel téléchargé" : "Excel downloaded");
+    } catch {
+      onToast("error", lang === "fr" ? "Export Excel échoué" : "Excel export failed");
+    } finally { setLoading(null); }
+  };
   const handleJson = () => {
     triggerDownload(new Blob([JSON.stringify(transactions, null, 2)], { type: "application/json" }), "transactions.json");
     onToast("info", "JSON téléchargé");
@@ -950,6 +959,7 @@ function ScreenPdf({ T, go, lang, transactions, eurRates, recipientNames, startY
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
               <DLRow ext="PDF" name={`rapport_${period}.pdf`} onDl={handlePdf} primary />
               <DLRow ext="CSV" name={`transactions_${period}.csv`} onDl={handleCsv} />
+              <DLRow ext="XLSX" name={`transactions_${period}.xlsx`} onDl={handleXlsx} />
               <DLRow ext="JSON" name="transactions.json" onDl={handleJson} />
             </div>
           </APanel>

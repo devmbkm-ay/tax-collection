@@ -195,3 +195,100 @@ def export_csv(
 
     # UTF-8 BOM so Excel opens it correctly without encoding issues
     return '﻿' + output.getvalue()
+
+
+def export_xlsx(
+    transactions: List[WorldRemitTransaction],
+    recipient_name: str = "",
+    period: str = "",
+    lang: str = "fr",
+) -> bytes:
+    """Generate a styled .xlsx workbook and return it as bytes."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    from .models import TRANSLATIONS
+
+    tr = TRANSLATIONS.get(lang, TRANSLATIONS["fr"])
+    wb = Workbook()
+    ws = wb.active
+    ws.title = period or "Transactions"
+
+    # ── Palette ──────────────────────────────────────────────────────────
+    HEADER_FILL = PatternFill("solid", fgColor="2D2D2D")
+    ALT_FILL    = PatternFill("solid", fgColor="F4F1EA")
+    TOTAL_FILL  = PatternFill("solid", fgColor="E8E3D8")
+    thin = Side(style="thin", color="DDDDDD")
+    cell_border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    # ── Title block ───────────────────────────────────────────────────────
+    if recipient_name:
+        ws.append([tr.get("report_title", "WorldRemit — Rapport fiscal"), "", "", "", "", ""])
+        ws.append([recipient_name, "", "", "", "", ""])
+        ws.append([period, "", "", "", "", ""])
+        ws.append([])
+        title_rows = 4
+    else:
+        title_rows = 0
+
+    # ── Header row ────────────────────────────────────────────────────────
+    headers = [tr["col_date"], tr["col_recipient"], tr["col_amount"],
+               tr["col_currency"], tr["col_eur"], tr["col_txn"], tr["col_country"]]
+    ws.append(headers)
+    header_row = title_rows + 1
+
+    for col, _ in enumerate(headers, 1):
+        cell = ws.cell(row=header_row, column=col)
+        cell.font = Font(bold=True, color="FFFFFF", name="Calibri")
+        cell.fill = HEADER_FILL
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = cell_border
+
+    # ── Data rows ─────────────────────────────────────────────────────────
+    sorted_txns = sorted(transactions, key=lambda x: x.sort_key)
+    total_eur = 0.0
+
+    for i, t in enumerate(sorted_txns):
+        try:
+            eur_val = float(t.amount_eur.replace(",", ".")) if t.amount_eur and t.amount_eur != "N/A" else None
+        except ValueError:
+            eur_val = None
+        if eur_val:
+            total_eur += eur_val
+
+        row = [t.date, t.recipient_name or "—", t.amount, t.currency,
+               eur_val if eur_val is not None else t.amount_eur,
+               t.transaction_number, t.country or "—"]
+        ws.append(row)
+        data_row = header_row + 1 + i
+        fill = ALT_FILL if i % 2 == 1 else None
+        for col in range(1, len(headers) + 1):
+            cell = ws.cell(row=data_row, column=col)
+            if fill:
+                cell.fill = fill
+            cell.border = cell_border
+            cell.font = Font(name="Calibri", size=10)
+            if col in (3, 5):  # amount columns
+                cell.alignment = Alignment(horizontal="right")
+
+    # ── Total row ─────────────────────────────────────────────────────────
+    total_row_idx = header_row + 1 + len(sorted_txns)
+    total_label = "TOTAL" if lang == "en" else "TOTAL"
+    ws.append(["", "", "", total_label, round(total_eur, 2), "", ""])
+    for col in range(1, len(headers) + 1):
+        cell = ws.cell(row=total_row_idx, column=col)
+        cell.fill = TOTAL_FILL
+        cell.font = Font(bold=True, name="Calibri", size=10)
+        cell.border = cell_border
+        if col == 5:
+            cell.number_format = "#,##0.00"
+
+    # ── Column widths ─────────────────────────────────────────────────────
+    col_widths = [16, 24, 10, 10, 10, 22, 14]
+    for i, width in enumerate(col_widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = width
+    ws.row_dimensions[header_row].height = 20
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

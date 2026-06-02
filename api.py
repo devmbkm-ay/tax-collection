@@ -273,6 +273,26 @@ async def report_csv(req: ReportRequest):
     )
 
 
+@app.post("/api/report/xlsx")
+async def report_xlsx(req: ReportRequest):
+    """Generate an Excel (.xlsx) export from a transactions payload."""
+    from worldremit.models import WorldRemitTransaction
+    from worldremit.report import export_xlsx
+
+    txns = [WorldRemitTransaction(**t) for t in req.transactions]
+    period = (
+        str(req.start_year)
+        if req.start_year == req.end_year
+        else f"{req.start_year}-{req.end_year}"
+    )
+    xlsx_bytes = export_xlsx(txns, recipient_name=req.recipient_name, period=period, lang=req.lang)
+    return Response(
+        content=xlsx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="transactions_{period}.xlsx"'},
+    )
+
+
 @app.patch("/api/transactions")
 async def patch_transaction(req: UpdateTransactionRequest):
     """Update editable fields (recipient_name, country, amount_eur) of a stored transaction."""
